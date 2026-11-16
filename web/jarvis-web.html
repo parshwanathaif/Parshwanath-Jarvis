@@ -72,7 +72,8 @@
     <section class="card" id="core">
       <button id="orb" type="button" aria-label="Talk to Jarvis"></button>
       <div id="state">Standing by</div>
-      <div id="hint">Click the reactor, speak, then click again to send.</div>
+      <div id="hint">Click the reactor and speak. I send when you pause.</div>
+      <p><button class="btn" type="button" id="fixmic" hidden>Fix microphone</button></p>
       <form class="row" id="form"><input type="text" id="text" placeholder="…or type a command" autocomplete="off" aria-label="Command"><button class="btn" type="submit">Send</button></form>
       <div class="chips" id="chips"></div>
     </section>
@@ -416,25 +417,64 @@ async function send(text) {
   speak(reply.speech);
 }
 
+const MIC_MSG = {
+  not_granted: "The microphone is blocked for this page. Use “Fix microphone” below, and allow the microphone in your browser's address bar.",
+  dismissed: "You closed the microphone question. Click the reactor to be asked again.",
+  unavailable: "Voice input isn't offered here. It needs Chrome or Edge on a computer, or the main window of the Claude desktop app, signed in to your own account.",
+  rate_limited: "Voice input is busy. Wait a few seconds and try again.",
+  upstream_error: "The microphone or the speech service failed. Check that a microphone is connected and selected, then try again.",
+  no_gesture: "Click the reactor itself to start listening.",
+  time_limit: "Listening stopped after an hour. Click to start again.",
+};
+let silenceTimer = null, gotWords = false;
+function hint(t) { $("hint").textContent = t; }
+function armSilence() { clearTimeout(silenceTimer); silenceTimer = setTimeout(() => { if (listening && dict) dict.stop().catch(() => {}); }, 1600); }
+
 $("orb").onclick = () => {
   if (speaking && tts) { tts.stop(); return; }
-  if (!dict) { $("hint").textContent = "Voice input is not available in this view. Type your command below."; $("text").focus(); return; }
+  if (!dict) { hint(MIC_MSG.unavailable + " You can type commands below."); $("text").focus(); return; }
   if (listening) { dict.stop().catch(() => {}); return; }
-  heard = ""; dict.start({ language: "en-IN" }).catch(e => { if (e && e.code === "not_granted") { dict = null; $("hint").textContent = "Microphone not allowed. You can type commands below."; } });
+  heard = ""; gotWords = false;
+  dict.start().catch(e => {                       // called synchronously from the click, viewer's own language
+    const code = e && e.code;
+    if (code === "stopped") return;
+    hint(MIC_MSG[code] || ("Voice input failed: " + ((e && e.message) || code || "unknown error")));
+    if (code === "not_granted") $("fixmic").hidden = false;
+    idle();
+  });
 };
 function wireDictation(d) {
   dict = d;
-  d.onPartial(({ text }) => { $("hint").textContent = (heard + " " + text).trim(); });
-  d.onFinal(({ text }) => { heard = (heard + text); $("hint").textContent = heard.trim(); });
+  d.onPartial(({ text }) => { if (text) { gotWords = true; clearTimeout(silenceTimer); } hint((heard + " " + text).trim() || "Listening…"); });
+  d.onFinal(({ text }) => { heard = heard ? heard + text : text.replace(/^\s+/, ""); gotWords = true; hint(heard); armSilence(); });
   d.onState(({ state, reason }) => {
-    listening = state === "listening" || state === "starting";
-    if (listening) setState("listening", state === "starting" ? "Starting mic" : "Listening — click to send");
-    else if (state === "idle") { const t = heard.trim(); heard = ""; if (t && reason !== "hidden") send(t); else idle(); }
+    listening = state !== "idle";
+    if (state === "starting") { setState("listening", "Starting mic"); hint("Allow the microphone if asked…"); }
+    else if (state === "listening") { setState("listening", "Listening"); if (!gotWords) hint("Listening… speak now. I send when you pause."); }
+    else if (state === "finishing") setState("thinking", "Finishing");
+    else {                                         // back to idle
+      clearTimeout(silenceTimer);
+      const t = heard.trim(); heard = "";
+      if (t && reason !== "hidden") { send(t); return; }
+      if (reason && MIC_MSG[reason]) { hint(MIC_MSG[reason]); if (reason === "not_granted") $("fixmic").hidden = false; }
+      else if (reason === "stopped" || reason === "viewer_stopped") hint(gotWords ? "" : "I didn't catch anything. Click the reactor and try again.");
+      idle();
+    }
   });
 }
+$("fixmic").onclick = async () => {
+  const perms = window.claude && window.claude.use ? await window.claude.use("permissions") : null;
+  try { if (!perms) throw 0; await perms.manage(); const st = await perms.state("dictation");
+    hint(st === "granted" || st === "prompt" ? "Microphone allowed. Click the reactor and speak." : "The microphone is still off for this page.");
+    if (st === "granted" || st === "prompt") $("fixmic").hidden = true;
+  } catch (_) { hint("Open this page's Permissions menu (top of the page) and switch Dictation on, then click the reactor."); }
+};
 
 $("form").onsubmit = e => { e.preventDefault(); const t = $("text").value; $("text").value = ""; send(t); };
-document.addEventListener("keydown", e => { if (e.code === "Space" && document.activeElement !== $("text") && !e.repeat) { e.preventDefault(); $("orb").click(); } });
+document.addEventListener("keydown", e => {
+  const a = document.activeElement;
+  if (e.code !== "Space" || e.repeat || a === $("text") || (a && a.tagName === "BUTTON")) return;  // a focused button already clicks on Space
+  e.preventDefault(); $("orb").click(); });
 for (const c of ["How is my portfolio", "SIP of 10,000 a month for 15 years", "Show watchlist", "Business news", "Help"]) {
   const b = el("button", c, "chip"); b.type = "button"; b.onclick = () => send(c); $("chips").append(b); }
 
@@ -444,8 +484,11 @@ initStorage();
 (async () => {
   if (!window.claude || !window.claude.use) { $("hint").textContent = "Voice input is not available in this view. Type your command below."; return; }
   const [d, t, s] = await Promise.all([window.claude.use("dictation"), window.claude.use("tts"), window.claude.use("sample")]);
-  if (d) wireDictation(d); else $("hint").textContent = "Voice input needs Chrome, Edge or the Claude desktop app. You can type commands below.";
+  if (d) wireDictation(d); else hint(MIC_MSG.unavailable + " You can type commands below.");
   tts = t; sample = s;
+  const perms = await window.claude.use("permissions");
+  if (d && perms) { const st = await perms.state("dictation"); if (st === "denied") { hint(MIC_MSG.not_granted); $("fixmic").hidden = false; } }
+  setStatus($("status").textContent + (d ? " · voice ready" : " · voice unavailable here"));
   if (t) t.onState(({ state }) => { if (state === "idle" && speaking) { speaking = false; idle(); } });
 })();
 </script>
