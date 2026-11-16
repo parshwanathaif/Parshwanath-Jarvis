@@ -64,6 +64,10 @@
   .up { color: var(--up); } .down { color: var(--down); } .stale { color: var(--warn); }
   .empty { color: var(--dim); }
   .note { color: var(--dim); font-size: 12.5px; margin: 10px 0 0; }
+  #diag { text-align: left; margin-top: 14px; font-size: 12.5px; color: var(--dim); border-top: 1px solid var(--line); padding-top: 10px; }
+  #diag summary { cursor: pointer; font: 600 11px var(--display); letter-spacing: .1em; text-transform: uppercase; }
+  #diaglist { margin: 8px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 3px; font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+  #diaglist .ok { color: var(--up); } #diaglist .bad { color: var(--down); }
 </style>
 
 <header class="gutter"><h1>J.A.R.V.I.S</h1><span id="status">starting…</span></header>
@@ -74,6 +78,7 @@
       <div id="state">Standing by</div>
       <div id="hint">Click the reactor and speak. I send when you pause.</div>
       <p><button class="btn" type="button" id="fixmic" hidden>Fix microphone</button></p>
+      <details id="diag" open><summary>Voice check</summary><ol id="diaglist"></ol></details>
       <form class="row" id="form"><input type="text" id="text" placeholder="…or type a command" autocomplete="off" aria-label="Command"><button class="btn" type="submit">Send</button></form>
       <div class="chips" id="chips"></div>
     </section>
@@ -427,6 +432,10 @@ const MIC_MSG = {
   time_limit: "Listening stopped after an hour. Click to start again.",
 };
 let silenceTimer = null, gotWords = false;
+function diag(text, kind) {
+  const li = el("li", new Date().toLocaleTimeString("en-IN", { hour12: false }) + "  " + text, kind || "");
+  $("diaglist").append(li); while ($("diaglist").children.length > 14) $("diaglist").firstChild.remove();
+}
 function hint(t) { $("hint").textContent = t; }
 function armSilence() { clearTimeout(silenceTimer); silenceTimer = setTimeout(() => { if (listening && dict) dict.stop().catch(() => {}); }, 1600); }
 
@@ -435,8 +444,10 @@ $("orb").onclick = () => {
   if (!dict) { hint(MIC_MSG.unavailable + " You can type commands below."); $("text").focus(); return; }
   if (listening) { dict.stop().catch(() => {}); return; }
   heard = ""; gotWords = false;
-  dict.start().catch(e => {                       // called synchronously from the click, viewer's own language
+  diag("Clicked: asking to start listening");
+  dict.start().then(() => diag("Microphone is open", "ok")).catch(e => {   // called synchronously from the click, viewer's own language
     const code = e && e.code;
+    diag("Start refused: " + (code || "?") + (e && e.message ? " — " + e.message : ""), code === "stopped" ? "" : "bad");
     if (code === "stopped") return;
     hint(MIC_MSG[code] || ("Voice input failed: " + ((e && e.message) || code || "unknown error")));
     if (code === "not_granted") $("fixmic").hidden = false;
@@ -445,9 +456,10 @@ $("orb").onclick = () => {
 };
 function wireDictation(d) {
   dict = d;
-  d.onPartial(({ text }) => { if (text) { gotWords = true; clearTimeout(silenceTimer); } hint((heard + " " + text).trim() || "Listening…"); });
+  d.onPartial(({ text }) => { if (text && !gotWords) diag("Hearing words: “" + text.slice(0, 40) + "”", "ok"); if (text) { gotWords = true; clearTimeout(silenceTimer); } hint((heard + " " + text).trim() || "Listening…"); });
   d.onFinal(({ text }) => { heard = heard ? heard + text : text.replace(/^\s+/, ""); gotWords = true; hint(heard); armSilence(); });
   d.onState(({ state, reason }) => {
+    diag("State: " + state + (reason ? " (reason: " + reason + ")" : ""), reason && MIC_MSG[reason] ? "bad" : "");
     listening = state !== "idle";
     if (state === "starting") { setState("listening", "Starting mic"); hint("Allow the microphone if asked…"); }
     else if (state === "listening") { setState("listening", "Listening"); if (!gotWords) hint("Listening… speak now. I send when you pause."); }
@@ -482,12 +494,16 @@ addLog("Good day. I am Jarvis, your investing desk. Click the reactor and speak,
 renderSide();
 initStorage();
 (async () => {
-  if (!window.claude || !window.claude.use) { $("hint").textContent = "Voice input is not available in this view. Type your command below."; return; }
+  const ua = navigator.userAgent, br = /Edg\//.test(ua) ? "Edge" : /Chrome\//.test(ua) ? (/Electron|Claude/i.test(ua) ? "Claude app" : "Chrome") : /Firefox\//.test(ua) ? "Firefox" : /Safari\//.test(ua) ? "Safari" : "other";
+  diag("Browser: " + br + (/Windows/.test(ua) ? " on Windows" : ""), br === "Firefox" || br === "Safari" ? "bad" : "");
+  if (!window.claude || !window.claude.use) { diag("Claude page tools: missing — open the page on claude.ai", "bad"); hint("Voice input is not available in this view. Type your command below."); return; }
   const [d, t, s] = await Promise.all([window.claude.use("dictation"), window.claude.use("tts"), window.claude.use("sample")]);
+  diag("Voice input: " + (d ? "offered" : "NOT offered in this view"), d ? "ok" : "bad");
+  diag("Spoken replies: " + (t ? "offered" : "not offered") + " · AI brain: " + (s ? "offered" : "not offered"), t ? "ok" : "");
   if (d) wireDictation(d); else hint(MIC_MSG.unavailable + " You can type commands below.");
   tts = t; sample = s;
   const perms = await window.claude.use("permissions");
-  if (d && perms) { const st = await perms.state("dictation"); if (st === "denied") { hint(MIC_MSG.not_granted); $("fixmic").hidden = false; } }
+  if (d && perms) { const st = await perms.state("dictation"); diag("Dictation permission: " + st, st === "denied" || st === "unavailable" ? "bad" : st === "granted" ? "ok" : ""); if (st === "denied") { hint(MIC_MSG.not_granted); $("fixmic").hidden = false; } }
   setStatus($("status").textContent + (d ? " · voice ready" : " · voice unavailable here"));
   if (t) t.onState(({ state }) => { if (state === "idle" && speaking) { speaking = false; idle(); } });
 })();
