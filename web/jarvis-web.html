@@ -1,0 +1,451 @@
+<title>J.A.R.V.I.S Investing Desk</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: HUD — voice core + conversation on the left, result / portfolio / watchlist on the right. Deliberately dark-only. */
+  :root {
+    --bg: #050b14; --panel: #0a1626; --panel-2: #081c2e; --line: #15314d; --ink: #d7ecff; --dim: #7c9bb8;
+    --accent: #35d6ff; --up: #3ddc97; --down: #ff7a7a; --warn: #ffc857;
+    --display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+    --body: "Inter", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { background: var(--bg); color: var(--ink); }
+  body { font: 15px/1.5 var(--body); min-height: 100%;
+         background: radial-gradient(1100px 600px at 50% -10%, #0c2238 0%, var(--bg) 60%) var(--bg); }
+  .gutter { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  header { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; padding-block: 14px; border-bottom: 1px solid var(--line); }
+  header h1 { margin: 0; font: 600 18px var(--display); letter-spacing: .35em; color: var(--accent); }
+  #status { color: var(--dim); font-size: 13px; margin-left: auto; }
+  main { display: grid; grid-template-columns: minmax(0, 380px) minmax(0, 1fr); gap: 20px; padding-block: 20px; max-width: 1400px; margin: 0 auto; }
+  @media (max-width: 860px) { main { grid-template-columns: minmax(0, 1fr); } }
+  .stack { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
+  .card h2 { margin: 0 0 10px; font: 600 12px var(--display); letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+  .card h2 small { font: 400 12px var(--body); letter-spacing: 0; text-transform: none; margin-left: 6px; }
+  #core { text-align: center; }
+  #orb { width: 170px; height: 170px; border-radius: 50%; margin: 18px auto 26px; cursor: pointer; border: 0; display: block; position: relative;
+         background: radial-gradient(circle at 50% 50%, #e9fbff 0 8%, var(--accent) 9% 20%, #0b3b57 21% 34%, #06202f 35% 100%);
+         box-shadow: 0 0 0 3px #0e3550, 0 0 0 12px #081a2b, 0 0 40px 4px rgba(53,214,255,.35); transition: box-shadow .3s; }
+  #orb::after { content: ""; position: absolute; inset: -14px; border-radius: 50%; border: 2px dashed rgba(53,214,255,.45); animation: spin 24s linear infinite; }
+  #orb.listening { box-shadow: 0 0 0 3px var(--up), 0 0 0 12px #081a2b, 0 0 60px 10px rgba(61,220,151,.5); animation: pulse 1.2s ease-in-out infinite; }
+  #orb.thinking::after { animation-duration: 2s; }
+  #orb.speaking { box-shadow: 0 0 0 3px var(--accent), 0 0 0 12px #081a2b, 0 0 70px 14px rgba(53,214,255,.6); }
+  #orb:focus-visible { outline: 2px solid var(--warn); outline-offset: 18px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 50% { transform: scale(1.04); } }
+  @media (prefers-reduced-motion: reduce) { #orb, #orb::after { animation: none !important; } }
+  #state { color: var(--accent); min-height: 22px; letter-spacing: .1em; font: 500 13px var(--display); text-transform: uppercase; }
+  #hint { color: var(--dim); font-size: 13px; margin: 4px 0 12px; min-height: 20px; overflow-wrap: anywhere; }
+  form.row { display: flex; gap: 8px; }
+  input[type=text] { flex: 1; min-width: 0; background: #06101d; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font: inherit; }
+  input[type=text]:focus-visible { outline: 1px solid var(--accent); }
+  .btn { background: #0d2a40; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 9px 14px; font: inherit; cursor: pointer; }
+  .btn:hover, .btn:focus-visible { border-color: var(--accent); outline: none; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; justify-content: center; }
+  .chip { font: 12px var(--body); padding: 4px 10px; border-radius: 99px; border: 1px solid var(--line); background: transparent; color: var(--dim); cursor: pointer; }
+  .chip:hover, .chip:focus-visible { color: var(--ink); border-color: var(--accent); outline: none; }
+  #log { max-height: 340px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+  .msg { padding: 8px 12px; border-radius: 10px; max-width: 92%; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .msg.you { align-self: flex-end; background: #0f3049; }
+  .msg.jarvis { align-self: flex-start; background: var(--panel-2); border: 1px solid var(--line); }
+  .msg .links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; white-space: normal; }
+  a.go { display: inline-block; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--accent); color: var(--accent); text-decoration: none; font-size: 13px; }
+  a.go:hover, a.go:focus-visible { background: rgba(53,214,255,.12); outline: none; }
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--dim); font: 600 11px var(--display); text-transform: uppercase; letter-spacing: .08em; white-space: nowrap; }
+  td.num, th.num { text-align: right; white-space: nowrap; font-family: var(--mono); font-size: 13.5px; }
+  tr.total td { font-weight: 600; border-top: 2px solid var(--line); }
+  .up { color: var(--up); } .down { color: var(--down); } .stale { color: var(--warn); }
+  .empty { color: var(--dim); }
+  .note { color: var(--dim); font-size: 12.5px; margin: 10px 0 0; }
+</style>
+
+<header class="gutter"><h1>J.A.R.V.I.S</h1><span id="status">starting…</span></header>
+<main class="gutter">
+  <div class="stack">
+    <section class="card" id="core">
+      <button id="orb" type="button" aria-label="Talk to Jarvis"></button>
+      <div id="state">Standing by</div>
+      <div id="hint">Click the reactor, speak, then click again to send.</div>
+      <form class="row" id="form"><input type="text" id="text" placeholder="…or type a command" autocomplete="off" aria-label="Command"><button class="btn" type="submit">Send</button></form>
+      <div class="chips" id="chips"></div>
+    </section>
+    <section class="card"><h2>Conversation</h2><div id="log" aria-live="polite"></div></section>
+  </div>
+  <div class="stack">
+    <section class="card"><h2 id="panelTitle">Result</h2><div id="panel" class="tablewrap"><span class="empty">Answers with figures appear here.</span></div></section>
+    <section class="card"><h2>Portfolio <small id="pfnote"></small></h2><div id="portfolio" class="tablewrap"></div>
+      <p class="note">Prices are the last ones you gave Jarvis (say “Reliance is at 2958”). Amber dates are more than a day old.</p></section>
+    <section class="card"><h2>Watchlist</h2><div id="watchlist" class="tablewrap"></div></section>
+  </div>
+</main>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const el = (tag, text, cls) => { const e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e; };
+
+// ---------------------------------------------------------------- state & storage
+const EMPTY = { portfolio: {}, watchlist: [], notes: [], todos: [], realised: [], prices: {} };
+let S = JSON.parse(JSON.stringify(EMPTY));
+let docRef = null, saveTimer = null, female = false;
+const LS = "jarvis-state-v1";
+
+function lsRead() { try { return JSON.parse(localStorage.getItem(LS) || "null"); } catch (_) { return null; } }
+function lsWrite() { try { localStorage.setItem(LS, JSON.stringify(S)); } catch (_) {} }
+function save() {
+  lsWrite();
+  if (!docRef) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => docRef.set({ state: JSON.stringify(S), updated: Date.now() }).catch(() => setStatus("Could not save to your account; kept on this device.")), 600);
+}
+function adopt(raw) { const v = typeof raw === "string" ? JSON.parse(raw) : raw; S = Object.assign(JSON.parse(JSON.stringify(EMPTY)), v || {}); }
+
+async function initStorage() {
+  const local = lsRead(); if (local) adopt(local);
+  renderSide();
+  const claude = window.claude;
+  if (!claude || !claude.use) { setStatus("Saved on this device only"); return; }
+  const [db, user] = await Promise.all([claude.use("db"), claude.use("user")]);
+  const id = user ? await user.id() : null;
+  if (!db || !id) { setStatus("Saved on this device only"); return; }
+  docRef = db.doc("data/users/" + id + "/state");
+  const timer = setTimeout(() => setStatus("Account storage is slow; using this device for now"), 10000);
+  try {
+    const snap = await docRef.get();
+    clearTimeout(timer);
+    const d = snap.data();
+    if (d && d.state) { adopt(d.state); lsWrite(); }
+    else if (local) save();               // first visit with account storage: keep what this device had
+    setStatus("Synced to your account · private to you");
+  } catch (_) { clearTimeout(timer); docRef = null; setStatus("Saved on this device only"); }
+  renderSide();
+}
+function setStatus(t) { $("status").textContent = t; }
+
+// ---------------------------------------------------------------- formatting
+function groupIN(n) { const s = String(n); if (s.length <= 3) return s; let head = s.slice(0, -3); const tail = s.slice(-3), parts = [];
+  while (head.length > 2) { parts.unshift(head.slice(-2)); head = head.slice(0, -2); } if (head) parts.unshift(head); return parts.join(",") + "," + tail; }
+function money(v, dec = 2) { if (v == null || isNaN(v)) return "n/a"; const sign = v < 0 ? "-" : ""; const [w, f] = Math.abs(v).toFixed(dec).split(".");
+  return sign + "₹" + groupIN(w) + (dec ? "." + f : ""); }
+function spoken(v) { const a = Math.abs(v), s = v < 0 ? "minus " : "";
+  return a >= 1e7 ? `${s}${(a / 1e7).toFixed(2)} crore rupees` : a >= 1e5 ? `${s}${(a / 1e5).toFixed(2)} lakh rupees` : `${s}${Math.round(a).toLocaleString("en-IN")} rupees`; }
+const pct = v => v == null || isNaN(v) ? "n/a" : (v >= 0 ? "+" : "") + v.toFixed(2) + "%";
+const UNITS = { k: 1e3, thousand: 1e3, lakh: 1e5, lakhs: 1e5, lac: 1e5, lacs: 1e5, crore: 1e7, crores: 1e7, cr: 1e7, million: 1e6, billion: 1e9 };
+const NUM = /(\d[\d,]*(?:\.\d+)?)\s*(k|thousand|lakhs?|lacs?|crores?|cr|million|billion)?\b/;
+function num(t) { const m = String(t).toLowerCase().match(NUM); return m ? parseFloat(m[1].replace(/,/g, "")) * (UNITS[m[2] || ""] || 1) : null; }
+const today = () => new Date().toISOString().slice(0, 10);
+
+// ---------------------------------------------------------------- symbols
+const ALIASES = { "nifty": "NIFTY", "nifty 50": "NIFTY", "sensex": "SENSEX", "bank nifty": "BANKNIFTY", "reliance": "RELIANCE", "tcs": "TCS",
+  "infosys": "INFY", "infy": "INFY", "hdfc bank": "HDFCBANK", "icici bank": "ICICIBANK", "sbi": "SBIN", "state bank": "SBIN", "axis bank": "AXISBANK",
+  "kotak": "KOTAKBANK", "kotak bank": "KOTAKBANK", "itc": "ITC", "l&t": "LT", "larsen": "LT", "wipro": "WIPRO", "hcl": "HCLTECH", "hcl tech": "HCLTECH",
+  "airtel": "BHARTIARTL", "bharti airtel": "BHARTIARTL", "maruti": "MARUTI", "tata motors": "TATAMOTORS", "tata steel": "TATASTEEL",
+  "tata power": "TATAPOWER", "bajaj finance": "BAJFINANCE", "asian paints": "ASIANPAINT", "titan": "TITAN", "hul": "HINDUNILVR",
+  "hindustan unilever": "HINDUNILVR", "sun pharma": "SUNPHARMA", "dr reddy": "DRREDDY", "dr reddys": "DRREDDY", "cipla": "CIPLA", "lupin": "LUPIN",
+  "divis": "DIVISLAB", "biocon": "BIOCON", "zydus": "ZYDUSLIFE", "adani enterprises": "ADANIENT", "adani ports": "ADANIPORTS", "ongc": "ONGC",
+  "ntpc": "NTPC", "power grid": "POWERGRID", "coal india": "COALINDIA", "zomato": "ETERNAL", "eternal": "ETERNAL", "paytm": "PAYTM", "lic": "LICI",
+  "irctc": "IRCTC", "apollo hospitals": "APOLLOHOSP", "mankind": "MANKIND", "torrent pharma": "TORNTPHARM", "alkem": "ALKEM", "glenmark": "GLENMARK" };
+const NOISE = /\b(the|a|an|stock|stocks|share|shares|price|of|for|company|ltd|limited|today|now|please|my)\b/g;
+function sym(name) { const k = String(name).toLowerCase().replace(NOISE, " ").replace(/[^a-z0-9&\- ]/g, " ").replace(/\s+/g, " ").trim();
+  if (!k) return null; return ALIASES[k] || k.replace(/[^a-z0-9&\-]/g, "").toUpperCase(); }
+const tvSym = s => s === "NIFTY" ? "NSE:NIFTY" : s === "SENSEX" ? "BSE:SENSEX" : s === "BANKNIFTY" ? "NSE:BANKNIFTY" : "NSE:" + s;
+const LINK = {
+  chart: s => ["Chart on TradingView", "https://www.tradingview.com/chart/?symbol=" + encodeURIComponent(tvSym(s))],
+  screener: s => ["Fundamentals on Screener", "https://www.screener.in/company/" + encodeURIComponent(s) + "/"],
+  quote: s => ["Live quote (Google Finance)", "https://www.google.com/finance/quote/" + encodeURIComponent(s === "NIFTY" ? "NIFTY_50:INDEXNSE" : s === "SENSEX" ? "SENSEX:INDEXBOM" : s + ":NSE")],
+};
+const SITES = { youtube: "https://www.youtube.com", google: "https://www.google.com", gmail: "https://mail.google.com", mail: "https://mail.google.com",
+  calendar: "https://calendar.google.com", drive: "https://drive.google.com", maps: "https://maps.google.com", github: "https://github.com",
+  amazon: "https://www.amazon.in", whatsapp: "https://web.whatsapp.com", linkedin: "https://www.linkedin.com", twitter: "https://x.com",
+  zerodha: "https://kite.zerodha.com", kite: "https://kite.zerodha.com", groww: "https://groww.in", upstox: "https://pro.upstox.com",
+  "angel one": "https://www.angelone.in", moneycontrol: "https://www.moneycontrol.com", "money control": "https://www.moneycontrol.com",
+  screener: "https://www.screener.in", tradingview: "https://www.tradingview.com", "trading view": "https://www.tradingview.com",
+  nse: "https://www.nseindia.com", bse: "https://www.bseindia.com", tickertape: "https://www.tickertape.in", sebi: "https://www.sebi.gov.in",
+  "economic times": "https://economictimes.indiatimes.com/markets", trendlyne: "https://trendlyne.com", chartink: "https://chartink.com", claude: "https://claude.ai" };
+
+// ---------------------------------------------------------------- portfolio maths
+function ltpOf(s) { const p = S.prices[s]; return p ? p.price : (S.portfolio[s] ? S.portfolio[s].avg : null); }
+function snapshot() {
+  const rows = Object.entries(S.portfolio).map(([s, h]) => { const ltp = ltpOf(s), inv = h.qty * h.avg, val = h.qty * ltp;
+    return { s, qty: h.qty, avg: h.avg, ltp, at: S.prices[s] ? S.prices[s].at : null, inv, val, pnl: val - inv, pnlPct: inv ? (val - inv) / inv * 100 : 0 }; });
+  rows.sort((a, b) => b.val - a.val);
+  const inv = rows.reduce((a, r) => a + r.inv, 0), val = rows.reduce((a, r) => a + r.val, 0);
+  return { rows, inv, val, pnl: val - inv, pnlPct: inv ? (val - inv) / inv * 100 : 0 };
+}
+function trade(s, qty, price, side) {
+  const h = S.portfolio[s] || { qty: 0, avg: 0 };
+  if (side === "buy") { h.avg = (h.qty * h.avg + qty * price) / (h.qty + qty); h.qty += qty; S.portfolio[s] = h; }
+  else {
+    if (qty > h.qty + 1e-9) throw new Error(`you only hold ${h.qty} of ${s}`);
+    const r = (price - h.avg) * qty; h.qty -= qty;
+    S.realised.push({ date: today(), s, qty, price, pnl: Math.round(r * 100) / 100 });
+    if (h.qty <= 1e-9) delete S.portfolio[s]; else S.portfolio[s] = h;
+    S.prices[s] = { price, at: today() }; save(); return r;
+  }
+  if (!S.prices[s]) S.prices[s] = { price, at: today() };
+  save(); return null;
+}
+const sipValue = (m, y, r) => { const i = r / 1200, n = Math.round(y * 12); return i === 0 ? m * n : m * ((1 + i) ** n - 1) / i * (1 + i); };
+function terms(t, def = 12) { t = t.toLowerCase(); let years = null, rate = null, m;
+  if ((m = t.match(/(\d+(?:\.\d+)?)\s*(?:years?|yrs?)/))) { years = +m[1]; t = t.replace(m[0], " "); }
+  if ((m = t.match(/(\d+(?:\.\d+)?)\s*(?:percent|per cent|%)/))) { rate = +m[1]; t = t.replace(m[0], " "); }
+  return { amount: num(t), years, rate: rate == null ? def : rate }; }
+
+// ---------------------------------------------------------------- commands
+const R = (speech, extra = {}) => Object.assign({ speech }, extra);
+const routes = [];
+const on = (re, fn) => routes.push([re, fn]);
+const NAME = "(?<name>.+?)", PRICE = "(?:rs\\.?|rupees|inr|₹)?\\s*(?<price>\\d[\\d,]*(?:\\.\\d+)?(?:\\s*(?:k|thousand|lakhs?|lacs?|crores?|cr)\\b)?)";
+const JOKES = ["Why did the investor bring a ladder to the exchange? Because the market was going through the roof.",
+  "I asked the market for a sign. It gave me a candlestick.", "My portfolio and I have a lot in common. We both need more green.",
+  "A bull, a bear and an analyst walk into a bar. Only the analyst predicted it afterwards."];
+const HELP = [["Portfolio", "I bought 10 shares of Reliance at 2900 · sold 5 TCS at 4100 · how is my portfolio · realised profit · remove TCS from my portfolio"],
+  ["Prices", "Reliance is at 2958 · update price of TCS to 4018 · price of Infosys (opens live quote) · chart of Nifty · fundamentals of ITC"],
+  ["Watchlist", "add Cipla to my watchlist · show watchlist · remove Cipla from watchlist"],
+  ["Calculators", "SIP of 10,000 a month for 15 years at 12 percent · lump sum of 5 lakh for 10 years · CAGR from 100 to 250 in 5 years"],
+  ["Ask anything", "should I add more pharma · explain what P/E ratio means · analyse my portfolio risk · compare HDFC Bank and ICICI Bank"],
+  ["Web", "open Zerodha · search for best ELSS funds · news about pharma sector · play lofi on YouTube · show Nariman Point on map"],
+  ["Memory", "remember that the AGM is on Friday · what do you remember · add call the auditor to my to-do list · show my to-do list · done 1"],
+  ["Assistant", "what time is it · today's date · tell me a joke · switch to Friday · switch to Jarvis · help"]];
+
+function holdingsPanel(snap) {
+  const rows = snap.rows.map(r => [r.s, String(+r.qty.toFixed(4)), money(r.avg), money(r.ltp), money(r.val, 0), money(r.pnl, 0), pct(r.pnlPct)]);
+  rows.push(["TOTAL", "", "", "", money(snap.val, 0), money(snap.pnl, 0), pct(snap.pnlPct)]);
+  return { title: "Portfolio", columns: ["Stock", "Qty", "Avg", "Last price", "Value", "P&L", "P&L %"], rows };
+}
+function showPortfolio() {
+  const snap = snapshot();
+  if (!snap.rows.length) return R("Your portfolio is empty. Say, for example, I bought 10 shares of Reliance at 2900.");
+  let sp = `Your portfolio is worth ${money(snap.val, 0)}, ${snap.pnl >= 0 ? "a gain" : "a loss"} of ${money(Math.abs(snap.pnl), 0)}, that is ${Math.abs(snap.pnlPct).toFixed(1)} percent.`;
+  if (snap.rows.length > 1) { const s = [...snap.rows].sort((a, b) => b.pnlPct - a.pnlPct);
+    sp += ` Best is ${s[0].s} at ${s[0].pnlPct >= 0 ? "plus" : "minus"} ${Math.abs(s[0].pnlPct).toFixed(1)} percent, weakest is ${s.at(-1).s} at ${s.at(-1).pnlPct >= 0 ? "plus" : "minus"} ${Math.abs(s.at(-1).pnlPct).toFixed(1)} percent.`; }
+  const old = snap.rows.filter(r => r.at && r.at < today()).length;
+  if (old) sp += ` ${old} of these prices are from an earlier day.`;
+  return R(sp, { panel: holdingsPanel(snap) });
+}
+
+on(/^(hi|hello|hey|namaste|good (morning|afternoon|evening)|are you there|wake up)\b/i, () => {
+  const h = new Date().getHours(); return R(`${h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"}. ${female ? "Friday" : "Jarvis"} at your service. How may I help?`); });
+on(/\b(thank you|thanks|well done|good job)\b/i, () => R("Always a pleasure."));
+on(/^(help|commands)$|what can you do|what are your (features|skills|commands)/i, () => R("Here is what I can do. The full list is on screen.", { panel: { title: "Voice commands", columns: ["Area", "Try saying"], rows: HELP } }));
+on(/\b(switch|change) to (friday|jarvis)\b|\b(female|male|lady|man'?s?) voice\b/i, (m) => { female = /friday|female|lady/i.test(m[0]); return R(`${female ? "Friday" : "Jarvis"} online.`); });
+on(/\bremember (?:that )?(?<note>.+)/i, (m) => { S.notes.push({ text: m.groups.note, when: new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) }); save(); return R(`I will remember that ${m.groups.note}.`); });
+on(/\b(what do you remember|do you remember anything|my notes|show notes|what did i (tell|ask) you)\b/i, () => S.notes.length
+  ? R("You asked me to remember: " + S.notes.slice(-5).map(n => n.text).join(". ") + ".", { panel: { title: "Notes", columns: ["When", "Note"], rows: S.notes.map(n => [n.when, n.text]) } })
+  : R("You have not asked me to remember anything yet."));
+on(/\b(forget everything|clear (my )?(notes|memory))\b/i, () => { S.notes = []; save(); return R("All notes cleared."); });
+const TODO = "(?:to ?do|to-do|task)s?(?: list)?";
+on(new RegExp(`\\badd (?<task>.+?) (?:to|in|on) (?:my |the )?${TODO}$`, "i"), (m) => { S.todos.push(m.groups.task); save(); return R(`Added to your to-do list: ${m.groups.task}.`); });
+on(new RegExp(`\\b(?:clear|empty) (?:my |the )?${TODO}`, "i"), () => { S.todos = []; save(); return R("To-do list cleared."); });
+on(/\b(?:remove|delete|done|complete|finish(?:ed)?) (?:with )?(?:task |item |number )*(?<n>\d+)$/i, (m) => { const n = +m.groups.n;
+  if (n < 1 || n > S.todos.length) return R(`There is no task number ${n}.`); const t = S.todos.splice(n - 1, 1)[0]; save(); return R(`Done. Removed: ${t}.`); });
+on(new RegExp(`\\b${TODO}\\b|\\bmy tasks\\b`, "i"), () => S.todos.length
+  ? R(`You have ${S.todos.length} task${S.todos.length > 1 ? "s" : ""}. ` + S.todos.slice(0, 6).map((t, i) => `${i + 1}, ${t}`).join(". ") + ".", { panel: { title: "To-do list", columns: ["#", "Task"], rows: S.todos.map((t, i) => [String(i + 1), t]) } })
+  : R("Your to-do list is empty."));
+on(/\b(what(?:'s| is) the time|time is it|current time|^the time$)/i, () => R("The time is " + new Date().toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }) + "."));
+on(/\b(what(?:'s| is) (the|today'?s) date|what day is it|today'?s date)\b/i, () => R("Today is " + new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) + "."));
+on(/\b(who are you|your name|who (made|created|built) you|stands? for)\b/i, () => R("I am Jarvis, Just A Rather Very Intelligent System. I keep your investing desk: portfolio, watchlist, calculators and analysis, all by voice."));
+on(/\bjoke\b|make me laugh/i, () => R(JOKES[Math.floor(Math.random() * JOKES.length)]));
+
+// portfolio
+on(new RegExp(`\\b(?:i\\s+)?(?<side>bought|buy|purchased|sold|sell)\\s+(?<qty>\\d[\\d,]*(?:\\.\\d+)?)\\s*(?:shares?|stocks?|units?)?\\s*(?:of\\s+)?${NAME}(?:\\s+(?:at|@|for)\\s+${PRICE}(?:\\s*(?:rupees|rs|each|per share))*)?$`, "i"), (m) => {
+  const side = /^s/i.test(m.groups.side) ? "sell" : "buy", s = sym(m.groups.name), qty = num(m.groups.qty);
+  const price = m.groups.price ? num(m.groups.price) : null;
+  if (!s) return R("Which company?");
+  if (price == null) return R(`At what price? Say, for example: ${side === "buy" ? "bought" : "sold"} ${qty} ${m.groups.name} at 2900.`);
+  let r; try { r = trade(s, qty, price, side); } catch (e) { return R(`I cannot record that sale, ${e.message}.`); }
+  if (side === "buy") { const h = S.portfolio[s]; return R(`Recorded. Bought ${qty} ${s} at ${money(price)}. You now hold ${+h.qty.toFixed(4)} at an average of ${money(h.avg)}.`); }
+  return R(`Recorded. Sold ${qty} ${s} at ${money(price)}, realised ${r >= 0 ? "profit" : "loss"} of ${money(Math.abs(r), 0)}.`);
+});
+on(new RegExp(`^(?:update (?:the )?(?:price|rate) of |set (?:the )?price of )?${NAME}\\s+(?:is|is at|is now|at|trading at|to|=)\\s+${PRICE}$`, "i"), (m) => {
+  const s = sym(m.groups.name); if (!s) return null;
+  S.prices[s] = { price: num(m.groups.price), at: today() }; save();
+  const h = S.portfolio[s];
+  if (!h) return R(`Noted. ${s} at ${money(S.prices[s].price)}.`);
+  const p = (S.prices[s].price - h.avg) / h.avg * 100;
+  return R(`Updated. ${s} at ${money(S.prices[s].price)}. Your ${+h.qty.toFixed(4)} shares are ${p >= 0 ? "up" : "down"} ${Math.abs(p).toFixed(1)} percent on cost.`);
+});
+on(new RegExp(`\\b(?:remove|delete)\\s+${NAME}\\s+from\\s+(?:my\\s+)?(?:portfolio|holdings)`, "i"), (m) => { const s = sym(m.groups.name);
+  if (!S.portfolio[s]) return R(`${m.groups.name} is not in your portfolio.`); delete S.portfolio[s]; save(); return R(`Removed ${s} from your portfolio.`); });
+on(/\breali[sz]ed\b|\bbooked (profit|loss)/i, () => { if (!S.realised.length) return R("No sales recorded yet, so there is no realised profit or loss.");
+  const t = S.realised.reduce((a, i) => a + i.pnl, 0);
+  return R(`Realised ${t >= 0 ? "profit" : "loss"} so far is ${money(Math.abs(t), 0)} across ${S.realised.length} sale${S.realised.length > 1 ? "s" : ""}.`,
+    { panel: { title: "Realised P&L", columns: ["Date", "Stock", "Qty", "Price", "P&L"], rows: S.realised.slice(-15).map(i => [i.date, i.s, String(i.qty), money(i.price), money(i.pnl, 0)]) } }); });
+on(/\b(clear|reset|delete) (my |the )?(whole |entire )?portfolio\b/i, () => R("To protect your records I do not clear the whole portfolio by voice. Remove holdings one by one, for example: remove TCS from my portfolio."));
+// watchlist
+on(new RegExp(`\\badd\\s+${NAME}\\s+(?:to|in|on)\\s+(?:my\\s+|the\\s+)?watch ?list`, "i"), (m) => { const s = sym(m.groups.name);
+  if (!S.watchlist.includes(s)) { S.watchlist.push(s); save(); } return R(`Added ${s} to your watchlist.`); });
+on(new RegExp(`\\b(?:remove|delete)\\s+${NAME}\\s+from\\s+(?:my\\s+|the\\s+)?watch ?list`, "i"), (m) => { const s = sym(m.groups.name), i = S.watchlist.indexOf(s);
+  if (i < 0) return R(`${m.groups.name} is not on your watchlist.`); S.watchlist.splice(i, 1); save(); return R(`Removed ${s} from your watchlist.`); });
+on(/\bwatch ?list\b/i, () => S.watchlist.length
+  ? R(`Your watchlist has ${S.watchlist.join(", ")}. Live quotes are linked below.`, { links: S.watchlist.slice(0, 6).map(s => LINK.quote(s)) })
+  : R("Your watchlist is empty. Say: add Infosys to my watchlist."));
+on(/\b(portfolio|holdings|my investments|net ?worth|p ?(&|and|n) ?l|profit (and|or) loss)\b/i, (m) => /\b(analy[sz]e|risk|should|advice|suggest|review|rebalanc)/i.test(m.input) ? null : showPortfolio());
+// calculators
+on(/\bcagr\b|compound(ed)? annual growth/i, (m) => { const n = [...m.input.toLowerCase().matchAll(new RegExp(NUM.source, "g"))].map(x => parseFloat(x[1].replace(/,/g, "")) * (UNITS[x[2] || ""] || 1));
+  if (n.length < 3 || n[0] <= 0 || n[2] <= 0) return R("Say it like this: CAGR from 100 to 250 in 5 years.");
+  return R(`Growing from ${n[0].toLocaleString("en-IN")} to ${n[1].toLocaleString("en-IN")} in ${n[2]} years is a CAGR of ${(((n[1] / n[0]) ** (1 / n[2]) - 1) * 100).toFixed(2)} percent.`); });
+on(/\b(sip|systematic investment|monthly investment)\b|\binvest(ing)?\b.*\b(a|per|every) month\b/i, (m) => { const { amount, years, rate } = terms(m.input);
+  if (!amount || !years) return R("Tell me the amount and period, for example: SIP of 10,000 a month for 15 years at 12 percent.");
+  const fv = sipValue(amount, years, rate), inv = amount * years * 12;
+  return R(`A monthly SIP of ${money(amount, 0)} for ${years} years at ${rate} percent grows to about ${spoken(fv)}. You invest ${spoken(inv)} and earn ${spoken(fv - inv)}.`,
+    { panel: { title: "SIP projection", columns: ["", ""], rows: [["Monthly investment", money(amount, 0)], ["Period", `${years} years`], ["Assumed return", `${rate}% a year`],
+      ["Total invested", money(inv, 0)], ["Estimated gains", money(fv - inv, 0)], ["Future value", money(fv, 0)]] } }); });
+on(/\b(lump ?sum|one[- ]time investment)\b|\binvest(ed|ing)?\b.*\byears?\b/i, (m) => { const { amount, years, rate } = terms(m.input);
+  if (!amount || !years) return R("Tell me the amount and period, for example: lump sum of 5 lakh for 10 years at 12 percent.");
+  const fv = amount * (1 + rate / 100) ** years;
+  return R(`${spoken(amount)} invested for ${years} years at ${rate} percent grows to about ${spoken(fv)}, which is ${(fv / amount).toFixed(1)} times your money.`,
+    { panel: { title: "Lump sum projection", columns: ["", ""], rows: [["Invested", money(amount, 0)], ["Period", `${years} years`], ["Assumed return", `${rate}% a year`], ["Future value", money(fv, 0)]] } }); });
+// links out
+on(/\b(?<kind>chart|fundamentals|screener|financials)\s+(?:of|for)\s+(?<name>.+)/i, (m) => { const s = sym(m.groups.name), l = /chart/i.test(m.groups.kind) ? LINK.chart(s) : LINK.screener(s);
+  return R(`Here is ${/chart/i.test(m.groups.kind) ? "the chart" : "the fundamentals page"} for ${s}.`, { links: [l] }); });
+on(/\b(?:price|quote|rate|value)\s+(?:of|for)\s+(?<name>.+)|^(?:what(?:'s| is)\s+)?(?<name2>.+?)\s+(?:share|stock)s?\s*(?:price|rate|quote)$/i, (m) => {
+  const s = sym(m.groups.name || m.groups.name2); const p = S.prices[s];
+  const said = p ? `The last price you gave me for ${s} was ${money(p.price)} on ${p.at}.` : `I do not have a price for ${s} yet.`;
+  return R(`${said} I cannot read live exchange data from this page, so here is the live quote.`, { links: [LINK.quote(s), LINK.chart(s)] }); });
+on(/\b(market (update|summary|status|today)|how(?:'s| is| are) the markets?|markets? today)\b/i, () => R("I cannot read live exchange data from this page. Here are the live market screens.",
+  { links: [LINK.quote("NIFTY"), LINK.quote("SENSEX"), ["Market news", "https://news.google.com/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtVnVHZ0pKVGlnQVAB?hl=en-IN&gl=IN&ceid=IN:en"]] }));
+on(/\b(?:news|headlines)\b(?:\s+(?:about|on|for|of|regarding))?\s*(?<topic>.*)/i, (m) => { const t = (m.groups.topic || "").replace(/\b(the|latest|today'?s?|please)\b/gi, " ").trim();
+  return R(t ? `Here are the latest headlines on ${t}.` : "Here are today's business headlines.",
+    { links: [[t ? `News: ${t}` : "Business news", t ? "https://news.google.com/search?q=" + encodeURIComponent(t) + "&hl=en-IN&gl=IN&ceid=IN:en" : "https://news.google.com/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtVnVHZ0pKVGlnQVAB?hl=en-IN&gl=IN&ceid=IN:en"]] }); });
+on(/\b(?:weather|temperature|forecast)\b(?:\s+(?:in|at|for))?\s*(?<city>.*)/i, (m) => { const c = m.groups.city.trim() || "Mumbai";
+  return R(`Here is the weather for ${c}.`, { links: [[`Weather in ${c}`, "https://www.google.com/search?q=" + encodeURIComponent("weather " + c)]] }); });
+on(/\b(?:play|search)\s+(?<what>.+?)\s+(?:on|in) youtube$|\b(?:search youtube for|youtube)\s+(?<what2>.+)/i, (m) => { const w = m.groups.what || m.groups.what2;
+  return R(`Here is ${w} on YouTube.`, { links: [["YouTube: " + w, "https://www.youtube.com/results?search_query=" + encodeURIComponent(w)]] }); });
+on(/\b(?:where is|locate|directions to|navigate to)\s+(?<place>.+)|\bshow (?:me )?(?<place2>.+?) on (?:the |google )?maps?$/i, (m) => { const p = m.groups.place || m.groups.place2;
+  return R(`Here is ${p} on the map.`, { links: [["Map: " + p, "https://www.google.com/maps/search/" + encodeURIComponent(p)]] }); });
+on(/^(?:search|google|look up|find)(?: google)?(?: for| about)?\s+(?<what>.+)/i, (m) => R(`Here are search results for ${m.groups.what}.`, { links: [["Google: " + m.groups.what, "https://www.google.com/search?q=" + encodeURIComponent(m.groups.what)]] }));
+on(/^(?:open|launch|go to|start)\s+(?<name>.+)/i, (m) => { const n = m.groups.name.toLowerCase().replace(/^(the|my)\s+|\s+(website|site|app|dot com)$/g, "").trim();
+  const url = SITES[n] || (/^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(n) ? "https://" + n : "https://www.google.com/search?q=" + encodeURIComponent(n));
+  return R(`Opening ${n}. Tap the link below.`, { links: [[n.replace(/\b\w/g, c => c.toUpperCase()), url]] }); });
+
+// ---------------------------------------------------------------- AI brain
+let sample = null; const history = [];
+async function askAI(q) {
+  if (!sample) return R("I do not have a built-in answer for that, and the AI brain is not available in this view. Say help to see my commands.");
+  const snap = snapshot();
+  const holdings = snap.rows.length ? snap.rows.map(r => `${r.s}: ${r.qty} @ avg ${r.avg.toFixed(2)}, last price ${r.ltp.toFixed(2)} (as of ${r.at || "buy date"})`).join("; ") : "none";
+  const ctx = history.slice(-4).map(([u, a]) => `User: ${u}\nJarvis: ${a}`).join("\n");
+  const prompt = `You are ${female ? "Friday" : "Jarvis"}, a voice assistant for the owner of an investing business in India.
+Your reply is read aloud: plain spoken sentences, no markdown, lists, tables or symbols, normally two to five sentences. Lead with the answer.
+Use rupees, lakh and crore. You cannot see live market data and your knowledge has a cutoff, so say so when current prices, results or news would matter,
+and give reasoning and main risks for investing questions. The user makes the decisions.
+Today is ${new Date().toDateString()}. The user's holdings: ${holdings}.
+${ctx ? "Recent conversation:\n" + ctx + "\n" : ""}User: ${q}`;
+  setState("thinking", "Thinking");
+  const live = addLog("…", "jarvis");
+  try {
+    const res = await sample(prompt, { cache: false, onText: ({ text }) => { live.firstChild.textContent = text; scrollLog(); } });
+    live.remove();
+    history.push([q, res.text]);
+    return R(res.text + (res.truncated ? " (answer cut short)" : ""), { logged: false });
+  } catch (e) {
+    live.remove();
+    if (e && e.code === "not_granted") { sample = null; return R("The AI brain was not allowed in this view. My built-in commands still work."); }
+    if (e && e.code === "rate_limited") return R("The AI brain is busy right now. Please try again in a minute.");
+    return R("I could not get an answer from the AI brain just now.");
+  }
+}
+
+async function handle(text) {
+  let q = String(text).trim().replace(/^(?:(?:hey|ok|okay)\s+)?(jarvis|friday)\b[\s,.!]*/i, "").replace(/[\s,]+(jarvis|friday)[.!?\s]*$/i, "").replace(/[.!?,\s]+$/, "");
+  if (!q) return R("Yes?");
+  for (const [re, fn] of routes) { const m = q.match(re); if (!m) continue; m.input = q; const out = fn(m); if (out) return out; }
+  return askAI(q);
+}
+
+// ---------------------------------------------------------------- rendering
+function scrollLog() { $("log").scrollTop = $("log").scrollHeight; }
+function addLog(text, who, links) {
+  const m = el("div", null, "msg " + who); m.append(document.createTextNode(text));
+  if (links && links.length) { const box = el("div", null, "links");
+    for (const [label, href] of links) { const a = el("a", label + " ↗", "go"); a.href = href; a.target = "_blank"; a.rel = "noopener"; box.append(a); }
+    m.append(box); }
+  $("log").append(m); scrollLog(); return m;
+}
+const NUMERIC = /^[\s₹$+\-\d.,%n/a]*$/;
+function table(target, panel) {
+  target.replaceChildren();
+  const t = el("table"), numeric = panel.columns.map((_, i) => i > 0 && panel.rows.every(r => NUMERIC.test(String(r[i] ?? ""))));
+  if (panel.columns.some(c => c)) { const tr = el("tr"); panel.columns.forEach((c, i) => tr.append(el("th", c, numeric[i] ? "num" : ""))); t.append(tr); }
+  for (const row of panel.rows) { const tr = el("tr", null, row[0] === "TOTAL" ? "total" : "");
+    row.forEach((c, i) => { const td = el("td", c, numeric[i] ? "num" : ""); if (numeric[i] && /^[+-]/.test(c)) td.classList.add(c[0] === "+" ? "up" : "down"); tr.append(td); });
+    t.append(tr); }
+  target.append(t);
+}
+function renderSide() {
+  const snap = snapshot();
+  if (snap.rows.length) {
+    const p = holdingsPanel(snap); table($("portfolio"), p);
+    // mark prices older than a day
+    [...$("portfolio").querySelectorAll("tr")].slice(1, -1).forEach((tr, i) => { const r = snap.rows[i]; if (r.at && r.at < today()) { tr.children[3].classList.add("stale"); tr.children[3].title = "Price from " + r.at; } });
+    $("pfnote").textContent = `${money(snap.val, 0)} · ${pct(snap.pnlPct)}`;
+  } else { $("portfolio").replaceChildren(el("span", "No holdings yet. Say “I bought 10 shares of Reliance at 2900”.", "empty")); $("pfnote").textContent = ""; }
+  if (S.watchlist.length) { const box = el("div", null, "links"); box.style.display = "flex"; box.style.flexWrap = "wrap"; box.style.gap = "6px";
+    for (const s of S.watchlist) { const [, href] = LINK.quote(s); const a = el("a", s + (S.prices[s] ? " · " + money(S.prices[s].price) : "") + " ↗", "go"); a.href = href; a.target = "_blank"; a.rel = "noopener"; box.append(a); }
+    $("watchlist").replaceChildren(box);
+  } else $("watchlist").replaceChildren(el("span", "Say “add Infosys to my watchlist”.", "empty"));
+}
+
+// ---------------------------------------------------------------- voice
+let dict = null, tts = null, listening = false, speaking = false, busy = false, heard = "";
+function setState(cls, label) { $("orb").className = cls; $("state").textContent = label; }
+function idle() { if (busy) return setState("thinking", "Working"); setState("", "Standing by"); }
+async function speak(text) {
+  if (!tts) return;
+  speaking = true; setState("speaking", "Speaking");
+  try { await tts.speak(text.slice(0, 2000), { voice: female ? "airy" : "buttery" }); } catch (_) {}
+  speaking = false; idle();
+}
+
+async function send(text) {
+  text = (text || "").trim(); if (!text || busy) return;
+  busy = true; addLog(text, "you"); $("hint").textContent = ""; setState("thinking", "Working");
+  let reply; try { reply = await handle(text); } catch (e) { reply = R("Something went wrong while doing that."); }
+  busy = false;
+  addLog(reply.speech, "jarvis", reply.links);
+  if (reply.panel) { $("panelTitle").textContent = reply.panel.title; table($("panel"), reply.panel); }
+  renderSide(); idle();
+  speak(reply.speech);
+}
+
+$("orb").onclick = () => {
+  if (speaking && tts) { tts.stop(); return; }
+  if (!dict) { $("hint").textContent = "Voice input is not available in this view. Type your command below."; $("text").focus(); return; }
+  if (listening) { dict.stop().catch(() => {}); return; }
+  heard = ""; dict.start({ language: "en-IN" }).catch(e => { if (e && e.code === "not_granted") { dict = null; $("hint").textContent = "Microphone not allowed. You can type commands below."; } });
+};
+function wireDictation(d) {
+  dict = d;
+  d.onPartial(({ text }) => { $("hint").textContent = (heard + " " + text).trim(); });
+  d.onFinal(({ text }) => { heard = (heard + text); $("hint").textContent = heard.trim(); });
+  d.onState(({ state, reason }) => {
+    listening = state === "listening" || state === "starting";
+    if (listening) setState("listening", state === "starting" ? "Starting mic" : "Listening — click to send");
+    else if (state === "idle") { const t = heard.trim(); heard = ""; if (t && reason !== "hidden") send(t); else idle(); }
+  });
+}
+
+$("form").onsubmit = e => { e.preventDefault(); const t = $("text").value; $("text").value = ""; send(t); };
+document.addEventListener("keydown", e => { if (e.code === "Space" && document.activeElement !== $("text") && !e.repeat) { e.preventDefault(); $("orb").click(); } });
+for (const c of ["How is my portfolio", "SIP of 10,000 a month for 15 years", "Show watchlist", "Business news", "Help"]) {
+  const b = el("button", c, "chip"); b.type = "button"; b.onclick = () => send(c); $("chips").append(b); }
+
+addLog("Good day. I am Jarvis, your investing desk. Click the reactor and speak, or type below. Say help for the full list.", "jarvis");
+renderSide();
+initStorage();
+(async () => {
+  if (!window.claude || !window.claude.use) { $("hint").textContent = "Voice input is not available in this view. Type your command below."; return; }
+  const [d, t, s] = await Promise.all([window.claude.use("dictation"), window.claude.use("tts"), window.claude.use("sample")]);
+  if (d) wireDictation(d); else $("hint").textContent = "Voice input needs Chrome, Edge or the Claude desktop app. You can type commands below.";
+  tts = t; sample = s;
+  if (t) t.onState(({ state }) => { if (state === "idle" && speaking) { speaking = false; idle(); } });
+})();
+</script>

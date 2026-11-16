@@ -9,7 +9,11 @@ price alerts, investment calculators and market news — all by voice.
 
 *(Screenshot uses sample data.)*
 
-## Start it
+## Use it on the web
+
+Open **https://claude.ai/artifact/GdshmbfnqouLUyMmNnVscd** (sign in to Claude). The web version (`web/jarvis-web.html`) keeps your portfolio, watchlist, notes and to-dos in your Claude account, private to you, and works by voice in Chrome, Edge or the Claude desktop app. It cannot read live exchange prices: tell it the price ("Reliance is at 2958") or tap the live-quote links. For live prices, news and weather fetched automatically, run the desktop version below.
+
+## Start it on your computer
 
 You need **Python 3.9 or newer** and **Chrome or Edge**. Nothing else has to be installed.
 
