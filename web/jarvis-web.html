@@ -403,7 +403,7 @@ function renderSide() {
 }
 
 // ---------------------------------------------------------------- voice
-let dict = null, tts = null, listening = false, speaking = false, busy = false, heard = "";
+let dict = null, tts = null, listening = false, speaking = false, busy = false, heard = "", lastPartial = "", userStopped = false;
 function setState(cls, label) { $("orb").className = cls; $("state").textContent = label; }
 function idle() { if (busy) return setState("thinking", "Working"); setState("", "Standing by"); }
 let ttsBroken = false, muted = false;
@@ -432,13 +432,20 @@ async function speakBrowser(text) {
 // Speak with the Claude voice; fall back to the browser's voice only when Claude's cannot play here.
 // Returns "spoken" | "stopped" | "off" | "failed".
 async function sayIt(text) {
+  userStopped = false;
   for (let i = 0; i < 30 && dict && dict.active(); i++) await wait(100);   // never talk over the microphone
   if (tts && !ttsBroken) {
     for (let attempt = 0; attempt < 2; attempt++) {
       try { await tts.speak(text, { voice: female ? "airy" : "buttery" }); return "spoken"; }
       catch (e) {
         const code = e && e.code;
-        if (code === "stopped") { diag("Claude voice stopped" + (e.reason ? " (" + e.reason + ")" : "")); return "stopped"; }
+        if (code === "stopped") {
+          const why = e.reason || "stopped";
+          diag("Claude voice stopped (" + why + ")", userStopped ? "" : "bad");
+          if (userStopped || why === "viewer_stopped" || why === "replaced") return "stopped";
+          diag("Something else cut the Claude voice off — using the computer's voice instead", "bad");
+          ttsBroken = true; break;                    // this view keeps cutting it off: stop using it this session
+        }
         if (code === "busy" && attempt === 0) { await wait(900); continue; }
         if (code === "not_granted") { ttsBroken = true; diag("Read aloud is switched off for this page. Turn it on in the page's Permissions menu.", "bad"); return "off"; }
         diag("Claude voice failed: " + (code || "?") + " — trying the browser voice", "bad");
@@ -455,7 +462,7 @@ async function speak(text) {
   await sayIt(text.slice(0, 2000));
   speaking = false; idle();
 }
-function stopSpeaking() { try { tts && tts.stop(); } catch (_) {} try { window.speechSynthesis && speechSynthesis.cancel(); } catch (_) {} speaking = false; idle(); }
+function stopSpeaking() { userStopped = true; try { tts && tts.stop(); } catch (_) {} try { window.speechSynthesis && speechSynthesis.cancel(); } catch (_) {} speaking = false; idle(); }
 
 async function send(text) {
   text = (text || "").trim(); if (!text || busy) return;
@@ -489,7 +496,7 @@ $("orb").onclick = () => {
   if (speaking) { stopSpeaking(); return; }
   if (!dict) { hint(MIC_MSG.unavailable + " You can type commands below."); $("text").focus(); return; }
   if (listening) { dict.stop().catch(() => {}); return; }
-  heard = ""; gotWords = false;
+  heard = ""; lastPartial = ""; gotWords = false;
   diag("Clicked: asking to start listening");
   dict.start().then(() => diag("Microphone is open", "ok")).catch(e => {   // called synchronously from the click, viewer's own language
     const code = e && e.code;
@@ -502,7 +509,7 @@ $("orb").onclick = () => {
 };
 function wireDictation(d) {
   dict = d;
-  d.onPartial(({ text }) => { if (text && !gotWords) diag("Hearing words: “" + text.slice(0, 40) + "”", "ok"); if (text) { gotWords = true; clearTimeout(silenceTimer); } hint((heard + " " + text).trim() || "Listening…"); });
+  d.onPartial(({ text }) => { if (text) lastPartial = text; if (text && !gotWords) diag("Hearing words: “" + text.slice(0, 40) + "”", "ok"); if (text) { gotWords = true; clearTimeout(silenceTimer); } hint((heard + " " + text).trim() || "Listening…"); });
   d.onFinal(({ text }) => { heard = heard ? heard + text : text.replace(/^\s+/, ""); gotWords = true; hint(heard); armSilence(); });
   d.onState(({ state, reason }) => {
     diag("State: " + state + (reason ? " (reason: " + reason + ")" : ""), reason && MIC_MSG[reason] ? "bad" : "");
@@ -512,7 +519,7 @@ function wireDictation(d) {
     else if (state === "finishing") setState("thinking", "Finishing");
     else {                                         // back to idle
       clearTimeout(silenceTimer);
-      const t = heard.trim(); heard = "";
+      const t = (heard.trim() || lastPartial.trim()); heard = ""; lastPartial = "";   // keep the draft words if no final text arrived
       if (t && reason !== "hidden") { send(t); return; }
       if (reason && MIC_MSG[reason]) { hint(MIC_MSG[reason]); if (reason === "not_granted") $("fixmic").hidden = false; }
       else if (reason === "stopped" || reason === "viewer_stopped") hint(gotWords ? "" : "I didn't catch anything. Click the reactor and try again.");
