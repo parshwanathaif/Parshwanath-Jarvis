@@ -79,7 +79,8 @@
       <div id="hint">Click the reactor and speak. I send when you pause.</div>
       <p class="chips"><button class="btn" type="button" id="fixmic" hidden>Fix microphone</button>
         <button class="btn" type="button" id="testvoice">Test speaker</button>
-        <button class="btn" type="button" id="mute" aria-pressed="false">Voice replies: on</button></p>
+        <button class="btn" type="button" id="mute" aria-pressed="false">Voice replies: on</button>
+        <button class="btn" type="button" id="engine">Voice: Claude</button></p>
       <details id="diag" open><summary>Voice check</summary><ol id="diaglist"></ol></details>
       <form class="row" id="form"><input type="text" id="text" placeholder="…or type a command" autocomplete="off" aria-label="Command"><button class="btn" type="submit">Send</button></form>
       <div class="chips" id="chips"></div>
@@ -407,6 +408,8 @@ let dict = null, tts = null, listening = false, speaking = false, busy = false, 
 function setState(cls, label) { $("orb").className = cls; $("state").textContent = label; }
 function idle() { if (busy) return setState("thinking", "Working"); setState("", "Standing by"); }
 let ttsBroken = false, muted = false;
+const IN_CLAUDE_APP = /Electron|Claude/i.test(navigator.userAgent);
+let engine = (() => { try { return localStorage.getItem("jarvis-voice-engine"); } catch (_) { return null; } })() || (IN_CLAUDE_APP ? "computer" : "claude");
 function browserVoice() {
   const vs = (window.speechSynthesis && speechSynthesis.getVoices()) || [];
   const en = vs.filter(v => /^en/i.test(v.lang));
@@ -434,6 +437,7 @@ async function speakBrowser(text) {
 async function sayIt(text) {
   userStopped = false;
   for (let i = 0; i < 30 && dict && dict.active(); i++) await wait(100);   // never talk over the microphone
+  if (engine === "computer") return (await speakBrowser(text)) ? "spoken" : "failed";
   if (tts && !ttsBroken) {
     for (let attempt = 0; attempt < 2; attempt++) {
       try { await tts.speak(text, { voice: female ? "airy" : "buttery" }); return "spoken"; }
@@ -546,6 +550,11 @@ $("testvoice").onclick = async () => {
   diag("Speaker test result: " + r, r === "spoken" ? "ok" : "bad");
   hint(r === "spoken" ? "Did you hear the voice? If not, check the Chrome tab and Windows volume." : "The voice could not play. See the Voice check list.");
 };
+function showEngine() { $("engine").textContent = "Voice: " + (engine === "computer" ? "Computer" : "Claude"); }
+$("engine").onclick = () => { stopSpeaking(); engine = engine === "computer" ? "claude" : "computer"; ttsBroken = false;
+  try { localStorage.setItem("jarvis-voice-engine", engine); } catch (_) {}
+  showEngine(); diag("Voice switched to: " + (engine === "computer" ? "computer voice" : "Claude voice")); };
+showEngine();
 $("mute").onclick = () => { muted = !muted; if (muted) stopSpeaking();
   $("mute").textContent = "Voice replies: " + (muted ? "off" : "on"); $("mute").setAttribute("aria-pressed", String(muted)); };
 $("form").onsubmit =e => { e.preventDefault(); const t = $("text").value; $("text").value = ""; send(t); };
@@ -562,6 +571,7 @@ initStorage();
 (async () => {
   const ua = navigator.userAgent, br = /Edg\//.test(ua) ? "Edge" : /Chrome\//.test(ua) ? (/Electron|Claude/i.test(ua) ? "Claude app" : "Chrome") : /Firefox\//.test(ua) ? "Firefox" : /Safari\//.test(ua) ? "Safari" : "other";
   diag("Browser: " + br + (/Windows/.test(ua) ? " on Windows" : ""), br === "Firefox" || br === "Safari" ? "bad" : "");
+  diag("Reply voice: " + (engine === "computer" ? "computer voice" : "Claude voice") + " (change with the Voice button)");
   if (!window.claude || !window.claude.use) { diag("Claude page tools: missing — open the page on claude.ai", "bad"); hint("Voice input is not available in this view. Type your command below."); return; }
   const [d, t, s] = await Promise.all([window.claude.use("dictation"), window.claude.use("tts"), window.claude.use("sample")]);
   diag("Voice input: " + (d ? "offered" : "NOT offered in this view"), d ? "ok" : "bad");
