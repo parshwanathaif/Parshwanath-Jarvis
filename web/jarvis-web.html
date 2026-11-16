@@ -77,7 +77,9 @@
       <button id="orb" type="button" aria-label="Talk to Jarvis"></button>
       <div id="state">Standing by</div>
       <div id="hint">Click the reactor and speak. I send when you pause.</div>
-      <p><button class="btn" type="button" id="fixmic" hidden>Fix microphone</button></p>
+      <p class="chips"><button class="btn" type="button" id="fixmic" hidden>Fix microphone</button>
+        <button class="btn" type="button" id="testvoice">Test speaker</button>
+        <button class="btn" type="button" id="mute" aria-pressed="false">Voice replies: on</button></p>
       <details id="diag" open><summary>Voice check</summary><ol id="diaglist"></ol></details>
       <form class="row" id="form"><input type="text" id="text" placeholder="…or type a command" autocomplete="off" aria-label="Command"><button class="btn" type="submit">Send</button></form>
       <div class="chips" id="chips"></div>
@@ -404,12 +406,44 @@ function renderSide() {
 let dict = null, tts = null, listening = false, speaking = false, busy = false, heard = "";
 function setState(cls, label) { $("orb").className = cls; $("state").textContent = label; }
 function idle() { if (busy) return setState("thinking", "Working"); setState("", "Standing by"); }
+let ttsBroken = false, muted = false;
+function browserVoice() {
+  const vs = (window.speechSynthesis && speechSynthesis.getVoices()) || [];
+  const en = vs.filter(v => /^en/i.test(v.lang));
+  const want = female ? /zira|heera|female|samantha|aria|jenny|neerja|susan/i : /ravi|david|mark|guy|male|daniel|george|prabhat/i;
+  return en.find(v => want.test(v.name)) || en.find(v => /en-IN/i.test(v.lang)) || en[0] || vs[0] || null;
+}
+function speakBrowser(text) {
+  return new Promise(done => {
+    if (!("speechSynthesis" in window)) { diag("Backup voice: not available in this browser", "bad"); return done(false); }
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text.replace(/₹\s?/g, "rupees ").replace(/%/g, " percent"));
+    const v = browserVoice(); if (v) u.voice = v;
+    u.rate = 1.02; u.pitch = female ? 1.1 : 0.95;
+    let ended = false; const fin = ok => { if (ended) return; ended = true; done(ok); };
+    u.onend = () => fin(true);
+    u.onerror = e => { diag("Backup voice error: " + (e.error || "unknown"), "bad"); fin(false); };
+    setTimeout(() => fin(true), Math.max(5000, text.length * 120));
+    speechSynthesis.speak(u);
+  });
+}
 async function speak(text) {
-  if (!tts) return;
+  if (muted) return;
+  text = text.slice(0, 2000);
   speaking = true; setState("speaking", "Speaking");
-  try { await tts.speak(text.slice(0, 2000), { voice: female ? "airy" : "buttery" }); } catch (_) {}
+  let done = false;
+  if (tts && !ttsBroken) {
+    try { await tts.speak(text, { voice: female ? "airy" : "buttery" }); done = true; }
+    catch (e) {
+      const code = e && e.code;
+      if (code === "stopped" || code === "replaced") done = true;          // the viewer or a newer reply stopped it
+      else { diag("Claude voice failed: " + (code || "?") + " — using the browser voice", "bad"); if (code === "not_granted" || code === "unavailable") ttsBroken = true; }
+    }
+  }
+  if (!done) await speakBrowser(text);
   speaking = false; idle();
 }
+function stopSpeaking() { try { tts && tts.stop(); } catch (_) {} try { window.speechSynthesis && speechSynthesis.cancel(); } catch (_) {} speaking = false; idle(); }
 
 async function send(text) {
   text = (text || "").trim(); if (!text || busy) return;
@@ -440,7 +474,7 @@ function hint(t) { $("hint").textContent = t; }
 function armSilence() { clearTimeout(silenceTimer); silenceTimer = setTimeout(() => { if (listening && dict) dict.stop().catch(() => {}); }, 1600); }
 
 $("orb").onclick = () => {
-  if (speaking && tts) { tts.stop(); return; }
+  if (speaking) { stopSpeaking(); return; }
   if (!dict) { hint(MIC_MSG.unavailable + " You can type commands below."); $("text").focus(); return; }
   if (listening) { dict.stop().catch(() => {}); return; }
   heard = ""; gotWords = false;
@@ -482,7 +516,18 @@ $("fixmic").onclick = async () => {
   } catch (_) { hint("Open this page's Permissions menu (top of the page) and switch Dictation on, then click the reactor."); }
 };
 
-$("form").onsubmit = e => { e.preventDefault(); const t = $("text").value; $("text").value = ""; send(t); };
+$("testvoice").onclick = async () => {
+  diag("Speaker test: Claude voice…");
+  let ok = false;
+  if (tts) { try { await tts.speak("This is the Claude voice. If you hear me, voice replies work.", { voice: female ? "airy" : "buttery" }); ok = true; diag("Claude voice finished speaking", "ok"); }
+    catch (e) { diag("Claude voice failed: " + ((e && e.code) || "?"), "bad"); } }
+  else diag("Claude voice: not offered in this view", "bad");
+  if (!ok) { diag("Speaker test: browser voice…"); if (await speakBrowser("This is the browser voice. If you hear me, voice replies work.")) diag("Browser voice finished speaking", "ok"); }
+  hint("Did you hear a voice? If not, see the speaker checks.");
+};
+$("mute").onclick = () => { muted = !muted; if (muted) stopSpeaking();
+  $("mute").textContent = "Voice replies: " + (muted ? "off" : "on"); $("mute").setAttribute("aria-pressed", String(muted)); };
+$("form").onsubmit =e => { e.preventDefault(); const t = $("text").value; $("text").value = ""; send(t); };
 document.addEventListener("keydown", e => {
   const a = document.activeElement;
   if (e.code !== "Space" || e.repeat || a === $("text") || (a && a.tagName === "BUTTON")) return;  // a focused button already clicks on Space
@@ -505,6 +550,7 @@ initStorage();
   const perms = await window.claude.use("permissions");
   if (d && perms) { const st = await perms.state("dictation"); diag("Dictation permission: " + st, st === "denied" || st === "unavailable" ? "bad" : st === "granted" ? "ok" : ""); if (st === "denied") { hint(MIC_MSG.not_granted); $("fixmic").hidden = false; } }
   setStatus($("status").textContent + (d ? " · voice ready" : " · voice unavailable here"));
-  if (t) t.onState(({ state }) => { if (state === "idle" && speaking) { speaking = false; idle(); } });
+  if (t) t.onState(({ state, reason }) => { if (reason && reason !== "completed" && reason !== "replaced") diag("Claude voice ended: " + reason, reason === "viewer_stopped" ? "" : "bad"); });
+  if ("speechSynthesis" in window) { speechSynthesis.getVoices(); speechSynthesis.onvoiceschanged = () => {}; }
 })();
 </script>
