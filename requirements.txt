@@ -1,0 +1,8 @@
+# Jarvis itself needs only Python 3.9+ - nothing to install.
+# Optional extras:
+anthropic>=1.0        # AI brain: answer any question (needs ANTHROPIC_API_KEY)
+psutil                # CPU / memory / battery in "system status"
+# Terminal voice mode only (python jarvis.py --voice); the browser HUD does not need these:
+# SpeechRecognition
+# pyttsx3
+# PyAudio

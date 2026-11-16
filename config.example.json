@@ -1,0 +1,13 @@
+{
+  "user_name": "Sir",
+  "assistant_name": "Jarvis",
+  "city": "Mumbai",
+  "ticker": ["^NSEI", "^BSESN", "^NSEBANK", "USDINR=X", "GC=F", "CL=F"],
+  "email": {"smtp_host": "smtp.gmail.com", "smtp_port": 587, "address": "you@gmail.com"},
+  "contacts": {"rahul": "rahul@example.com"},
+  "connections": {
+    "trading terminal": {"type": "url", "target": "https://kite.zerodha.com", "say": "Trading terminal is up."},
+    "excel": {"type": "app", "target": "excel.exe", "say": "Opening Excel."},
+    "office lights": {"type": "webhook", "target": "https://example.com/your-webhook", "say": "Lights on."}
+  }
+}

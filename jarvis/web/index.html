@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>J.A.R.V.I.S</title>
+<style>
+  :root { --bg:#050b14; --panel:#0a1626; --line:#15314d; --ink:#d7ecff; --dim:#6f8fae; --accent:#35d6ff;
+          --up:#3ddc97; --down:#ff6b6b; --warn:#ffc857; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:radial-gradient(1200px 700px at 50% -10%, #0c2238 0%, var(--bg) 60%); color:var(--ink);
+         font:15px/1.5 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; min-height:100vh; }
+  header { display:flex; align-items:center; gap:16px; padding:12px 20px; border-bottom:1px solid var(--line); }
+  header h1 { margin:0; font-size:18px; letter-spacing:.35em; color:var(--accent); font-weight:600; }
+  #status { color:var(--dim); font-size:13px; margin-left:auto; }
+  #ticker { display:flex; gap:10px; padding:10px 20px; overflow-x:auto; border-bottom:1px solid var(--line); }
+  .tick { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:6px 12px; white-space:nowrap; }
+  .tick b { display:block; font-size:11px; color:var(--dim); font-weight:500; text-transform:uppercase; letter-spacing:.06em; }
+  .tick span { font-variant-numeric:tabular-nums; }
+  .up { color:var(--up); } .down { color:var(--down); }
+  main { display:grid; grid-template-columns:minmax(280px, 380px) 1fr; gap:20px; padding:20px; max-width:1400px; margin:auto; }
+  @media (max-width:860px) { main { grid-template-columns:1fr; } }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h2 { margin:0 0 10px; font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--dim); font-weight:600; }
+  #core { text-align:center; }
+  #orb { width:190px; height:190px; border-radius:50%; margin:18px auto 28px; cursor:pointer; border:0; position:relative;
+         background:radial-gradient(circle at 50% 50%, #e9fbff 0 8%, var(--accent) 9% 20%, #0b3b57 21% 34%, #06202f 35% 100%);
+         box-shadow:0 0 0 3px #0e3550, 0 0 0 12px #081a2b, 0 0 40px 4px rgba(53,214,255,.35); transition:box-shadow .3s; }
+  #orb::after { content:""; position:absolute; inset:-14px; border-radius:50%; border:2px dashed rgba(53,214,255,.45);
+                animation:spin 24s linear infinite; }
+  #orb.listening { box-shadow:0 0 0 3px var(--up), 0 0 0 12px #081a2b, 0 0 60px 10px rgba(61,220,151,.5); animation:pulse 1.2s ease-in-out infinite; }
+  #orb.thinking::after { animation-duration:2s; }
+  #orb.speaking { box-shadow:0 0 0 3px var(--accent), 0 0 0 12px #081a2b, 0 0 70px 14px rgba(53,214,255,.6); }
+  #orb:focus-visible { outline:2px solid var(--warn); outline-offset:18px; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  @keyframes pulse { 50% { transform:scale(1.04); } }
+  @media (prefers-reduced-motion:reduce) { #orb, #orb::after { animation:none !important; } }
+  #state { color:var(--accent); min-height:22px; letter-spacing:.08em; font-size:13px; text-transform:uppercase; }
+  #hint { color:var(--dim); font-size:13px; margin:6px 0 12px; }
+  .row { display:flex; gap:8px; }
+  input[type=text] { flex:1; min-width:0; background:#06101d; color:var(--ink); border:1px solid var(--line); border-radius:8px;
+                     padding:10px 12px; font:inherit; }
+  input[type=text]:focus { outline:1px solid var(--accent); }
+  button.btn { background:#0d2a40; color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:9px 14px;
+               font:inherit; cursor:pointer; }
+  button.btn:hover { border-color:var(--accent); }
+  label.toggle { display:flex; align-items:center; gap:8px; justify-content:center; color:var(--dim); font-size:13px; margin-top:12px; cursor:pointer; }
+  #log { max-height:300px; overflow-y:auto; display:flex; flex-direction:column; gap:8px; }
+  .msg { padding:8px 12px; border-radius:10px; max-width:92%; overflow-wrap:anywhere; }
+  .msg.you { align-self:flex-end; background:#0f3049; }
+  .msg.jarvis { align-self:flex-start; background:#081c2e; border:1px solid var(--line); }
+  .msg.alert { border-color:var(--warn); }
+  .tablewrap { overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; font-variant-numeric:tabular-nums; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--dim); font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; }
+  td.num, th.num { text-align:right; white-space:nowrap; }
+  tr.total td { font-weight:600; border-top:2px solid var(--line); }
+  a { color:var(--accent); text-decoration:none; } a:hover { text-decoration:underline; }
+  .stack { display:flex; flex-direction:column; gap:20px; min-width:0; }
+  .empty { color:var(--dim); }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:12px; justify-content:center; }
+  .chip { font-size:12px; padding:4px 10px; border-radius:99px; border:1px solid var(--line); background:transparent; color:var(--dim); cursor:pointer; }
+  .chip:hover { color:var(--ink); border-color:var(--accent); }
+</style>
+</head>
+<body>
+<header><h1 id="title">J.A.R.V.I.S</h1><span id="status">connecting…</span></header>
+<div id="ticker" aria-label="Market ticker"></div>
+<main>
+  <div class="stack">
+    <section class="card" id="core">
+      <button id="orb" aria-label="Talk to Jarvis"></button>
+      <div id="state">Standing by</div>
+      <div id="hint">Click the reactor or press Space, then speak.</div>
+      <form class="row" id="form"><input type="text" id="text" placeholder="…or type a command" autocomplete="off" aria-label="Command">
+        <button class="btn" type="submit">Send</button></form>
+      <label class="toggle"><input type="checkbox" id="wake"> Always listen for “<span id="wakeword">Jarvis</span>”</label>
+      <div class="chips" id="chips"></div>
+    </section>
+    <section class="card"><h2>Conversation</h2><div id="log" aria-live="polite"></div></section>
+  </div>
+  <div class="stack">
+    <section class="card"><h2 id="panelTitle">Result</h2><div id="panel" class="tablewrap"><span class="empty">Ask me something — results appear here.</span></div></section>
+    <section class="card"><h2>Portfolio</h2><div id="portfolio" class="tablewrap"><span class="empty">No holdings yet. Say “I bought 10 shares of Reliance at 2900”.</span></div></section>
+    <section class="card"><h2>Watchlist</h2><div id="watchlist" class="tablewrap"><span class="empty">Say “add Infosys to my watchlist”.</span></div></section>
+  </div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const api = (path, body) => fetch(path, { method: body ? 'POST' : 'GET', headers: { 'X-Jarvis': '1', 'Content-Type': 'application/json' },
+  body: body ? JSON.stringify(body) : undefined }).then(r => r.json());
+let cfg = { assistant: 'Jarvis', language: 'en-IN' }, female = false, speaking = false, listening = false, armedUntil = 0, busy = false;
+
+function setState(name, label) { $('orb').className = name; $('state').textContent = label; }
+function el(tag, text, cls) { const e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e; }
+function log(text, who) { const m = el('div', text, 'msg ' + who); $('log').append(m); $('log').scrollTop = $('log').scrollHeight; }
+
+function renderTable(target, panel) {
+  target.replaceChildren();
+  if (!panel) return;
+  const table = el('table'), head = el('tr');
+  const numeric = panel.columns.map((_, i) => i > 0 && panel.rows.every(r => /^[\s₹$€£+\-\d.,%–n/a]*$/.test(String(r[i]?.text ?? r[i] ?? ''))));
+  if (panel.columns.some(c => c)) { panel.columns.forEach((c, i) => head.append(el('th', c, numeric[i] ? 'num' : ''))); table.append(head); }
+  for (const row of panel.rows) {
+    const tr = el('tr'); if (row[0] === 'TOTAL') tr.className = 'total';
+    row.forEach((cell, i) => {
+      const td = el('td', null, numeric[i] ? 'num' : '');
+      if (cell && typeof cell === 'object') {
+        if (/^https?:\/\//.test(cell.href || '')) { const a = el('a', cell.text); a.href = cell.href; a.target = '_blank'; a.rel = 'noopener'; td.append(a); }
+        else td.textContent = cell.text;
+      } else {
+        td.textContent = cell;
+        if (numeric[i] && /^[+\-−]/.test(String(cell)) ) td.classList.add(/^\+/.test(cell) ? 'up' : 'down');
+      }
+      tr.append(td);
+    });
+    table.append(tr);
+  }
+  target.append(table);
+}
+
+// ---- speech out -----------------------------------------------------------
+function pickVoice() {
+  const voices = speechSynthesis.getVoices().filter(v => v.lang.startsWith('en'));
+  const want = female ? /female|zira|samantha|heera|susan|karen|veena|aria|jenny|neerja/i : /(^|\s)male|daniel|david|george|ravi|mark|guy|ryan|prabhat|rishi/i;
+  const avoid = female ? /(^|\s)male/i : /female/i;
+  return voices.find(v => want.test(v.name) && !avoid.test(v.name)) || voices.find(v => /en-(GB|IN)/.test(v.lang)) || voices[0];
+}
+function speak(text) {
+  return new Promise(done => {
+    if (!('speechSynthesis' in window)) return done();
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text.replace(/₹\s?/g, 'rupees ').replace(/%/g, ' percent'));
+    const v = pickVoice(); if (v) u.voice = v;
+    u.rate = 1.02; u.pitch = female ? 1.1 : 0.9;
+    speaking = true; pauseRecognition(); setState('speaking', 'Speaking');
+    const finish = () => { if (!speaking) return; speaking = false; idle(); done(); };
+    u.onend = finish; u.onerror = finish; setTimeout(finish, Math.max(4000, text.length * 110));
+    speechSynthesis.speak(u);
+  });
+}
+
+// ---- speech in ------------------------------------------------------------
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null;
+function startRecognition() {
+  if (!SR || listening || speaking) return;
+  rec = new SR(); rec.lang = cfg.language; rec.interimResults = true; rec.continuous = $('wake').checked;
+  rec.onstart = () => { listening = true; if (!$('wake').checked || Date.now() < armedUntil) setState('listening', 'Listening'); else idle(); };
+  rec.onresult = e => {
+    const r = e.results[e.results.length - 1], heard = r[0].transcript.trim();
+    if (!r.isFinal) { $('hint').textContent = heard; return; }
+    onHeard(heard);
+  };
+  rec.onerror = e => {
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { $('wake').checked = false; $('hint').textContent = 'Microphone access was blocked. Allow it in the browser address bar.'; }
+  };
+  rec.onend = () => { listening = false; rec = null; if (!speaking && !busy) idle(); if ($('wake').checked && !speaking) setTimeout(startRecognition, 300); };
+  try { rec.start(); } catch (_) {}
+}
+function pauseRecognition() { if (rec) { try { rec.abort(); } catch (_) {} } }
+function onHeard(heard) {
+  if (!heard) return;
+  if (!$('wake').checked) return send(heard);
+  const name = cfg.assistant.toLowerCase(), lower = heard.toLowerCase(), at = lower.indexOf(name);
+  if (Date.now() < armedUntil) { armedUntil = 0; return send(heard); }
+  if (at < 0) return;                       // not addressed to the assistant: ignore
+  const command = heard.slice(at + name.length).replace(/^[\s,.!?]+/, '');
+  if (command) return send(command);
+  armedUntil = Date.now() + 9000; setState('listening', 'Yes?');   // bare wake word: take the next sentence
+}
+function idle() {
+  if (busy) return setState('thinking', 'Working');
+  $('wake').checked ? setState('', 'Waiting for “' + cfg.assistant + '”') : setState('', 'Standing by');
+}
+
+// ---- command round trip ---------------------------------------------------
+async function send(text) {
+  if (!text || busy) return;
+  busy = true; log(text, 'you'); $('hint').textContent = ' '; setState('thinking', 'Working');
+  let reply;
+  try { reply = await api('/api/command', { text }); }
+  catch (_) { reply = { speech: 'I have lost contact with the Jarvis program. Please make sure it is still running.' }; }
+  busy = false;
+  if (reply.voice) female = reply.voice === 'female';
+  if (reply.sleep) $('wake').checked = false;
+  log(reply.speech, 'jarvis');
+  if (reply.panel) { $('panelTitle').textContent = reply.panel.title || 'Result'; renderTable($('panel'), reply.panel); }
+  refresh();
+  await speak(reply.speech);
+  if ($('wake').checked) startRecognition();
+}
+
+async function refresh() {
+  let d; try { d = await api('/api/dashboard'); } catch (_) { $('status').textContent = 'offline — is Jarvis running?'; return; }
+  if (d.error) { $('status').textContent = 'market data unavailable'; return; }
+  cfg = d; $('wakeword').textContent = d.assistant; $('orb').setAttribute('aria-label', 'Talk to ' + d.assistant);
+  $('status').textContent = `online · ${d.alerts} alert${d.alerts === 1 ? '' : 's'} · AI brain ${d.ai ? 'on' : 'off'}`;
+  const tick = q => { const t = el('div', null, 'tick'); t.append(el('b', q.name), el('span', q.price + ' '));
+    if (q.pct != null) t.lastChild.append(el('span', (q.pct >= 0 ? '+' : '') + q.pct.toFixed(2) + '%', q.pct >= 0 ? 'up' : 'down')); return t; };
+  if (d.ticker.length) $('ticker').replaceChildren(...d.ticker.map(tick));
+  if (d.portfolio) renderTable($('portfolio'), d.portfolio);
+  if (d.watchlist.length) renderTable($('watchlist'), { columns: ['Stock', 'Last', 'Change'],
+    rows: d.watchlist.map(q => [q.name, q.price, q.pct == null ? 'n/a' : (q.pct >= 0 ? '+' : '') + q.pct.toFixed(2) + '%']) });
+}
+async function poll() {
+  try { const d = await api('/api/poll'); for (const n of d.notifications) { log(n, 'jarvis alert'); await speak(n); } } catch (_) {}
+}
+
+// ---- wiring ---------------------------------------------------------------
+$('orb').onclick = () => { if (speaking) { speechSynthesis.cancel(); return; }
+  if (!SR) { $('hint').textContent = 'Voice input needs Chrome or Edge. You can still type commands below.'; $('text').focus(); return; }
+  if ($('wake').checked) { armedUntil = Date.now() + 9000; setState('listening', 'Listening'); if (!listening) startRecognition(); }
+  else if (listening) pauseRecognition(); else startRecognition(); };
+$('form').onsubmit = e => { e.preventDefault(); const t = $('text').value.trim(); $('text').value = ''; send(t); };
+$('wake').onchange = () => { pauseRecognition(); listening = false; if ($('wake').checked) startRecognition(); idle(); };
+document.addEventListener('keydown', e => { if (e.code === 'Space' && document.activeElement !== $('text')) { e.preventDefault(); $('orb').click(); } });
+for (const c of ['Market update', 'How is my portfolio', 'Show watchlist', 'Business news', 'Help'])
+  { const b = el('button', c, 'chip'); b.type = 'button'; b.onclick = () => send(c); $('chips').append(b); }
+if ('speechSynthesis' in window) speechSynthesis.onvoiceschanged = () => {};
+if (!SR) $('hint').textContent = 'Voice input needs Chrome or Edge. You can still type commands below.';
+refresh(); setInterval(refresh, 60000); setInterval(poll, 15000);
+</script>
+</body>
+</html>
