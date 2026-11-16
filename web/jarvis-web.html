@@ -366,6 +366,8 @@ ${ctx ? "Recent conversation:\n" + ctx + "\n" : ""}User: ${q}`;
 async function handle(text) {
   let q = String(text).trim().replace(/^(?:(?:hey|ok|okay)\s+)?(jarvis|friday)\b[\s,.!]*/i, "").replace(/[\s,]+(jarvis|friday)[.!?\s]*$/i, "").replace(/[.!?,\s]+$/, "");
   if (!q) return R("Yes?");
+  const rest = q.match(/^(?:hi|hello|hey|namaste|good (?:morning|afternoon|evening))[\s,.!]+(?:(?:jarvis|friday)[\s,.!]+)?(.{3,})$/i);
+  if (rest) q = rest[1].replace(/[.!?,\s]+$/, "");          // "Hello, what is the time?" answers the question
   for (const [re, fn] of routes) { const m = q.match(re); if (!m) continue; m.input = q; const out = fn(m); if (out) return out; }
   return askAI(q);
 }
@@ -426,9 +428,11 @@ async function speakBrowser(text) {
     const v = browserVoice(); if (v) u.voice = v;
     u.rate = 1.02; u.pitch = female ? 1.1 : 0.95;
     let ended = false; const fin = ok => { if (ended) return; ended = true; done(ok); };
-    u.onend = () => fin(true);
+    u.onstart = () => diag("Computer voice speaking" + (u.voice ? " (" + u.voice.name + ")" : " (default voice)"), "ok");
+    u.onend = () => { diag("Computer voice finished", "ok"); fin(true); };
     u.onerror = e => { diag("Backup voice error: " + (e.error || "unknown"), "bad"); fin(false); };
     setTimeout(() => fin(true), Math.max(5000, text.length * 120));
+    if (!speechSynthesis.getVoices().length) diag("Computer voice: Windows reports no voices installed", "bad");
     speechSynthesis.speak(u);
   });
 }
@@ -451,6 +455,7 @@ async function sayIt(text) {
           ttsBroken = true; break;                    // this view keeps cutting it off: stop using it this session
         }
         if (code === "busy" && attempt === 0) { await wait(900); continue; }
+        if (code === "no_gesture") { ttsBroken = true; diag("Claude voice only plays right after a click here — using the computer voice", "bad"); break; }
         if (code === "not_granted") { ttsBroken = true; diag("Read aloud is switched off for this page. Turn it on in the page's Permissions menu.", "bad"); return "off"; }
         diag("Claude voice failed: " + (code || "?") + " — trying the browser voice", "bad");
         if (code === "unavailable") ttsBroken = true;
@@ -494,7 +499,7 @@ function diag(text, kind) {
   $("diaglist").append(li); while ($("diaglist").children.length > 40) $("diaglist").firstChild.remove();
 }
 function hint(t) { $("hint").textContent = t; }
-function armSilence() { clearTimeout(silenceTimer); silenceTimer = setTimeout(() => { if (listening && dict) dict.stop().catch(() => {}); }, 1600); }
+function armSilence() { clearTimeout(silenceTimer); silenceTimer = setTimeout(() => { if (listening && dict) dict.stop().catch(() => {}); }, 3000); }
 
 $("orb").onclick = () => {
   if (speaking) { stopSpeaking(); return; }
