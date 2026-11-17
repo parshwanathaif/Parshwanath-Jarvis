@@ -11,7 +11,18 @@ price alerts, investment calculators and market news — all by voice.
 
 ## Use it on the web
 
-Open **https://claude.ai/artifact/GdshmbfnqouLUyMmNnVscd** (sign in to Claude). The web version (`web/jarvis-web.html`) keeps your portfolio, watchlist, notes and to-dos in your Claude account, private to you, and works by voice in Chrome, Edge or the Claude desktop app. It cannot read live exchange prices: tell it the price ("Reliance is at 2958") or tap the live-quote links. For live prices, news and weather fetched automatically, run the desktop version below.
+Open **https://claude.ai/artifact/GdshmbfnqouLUyMmNnVscd** (signed in to Claude). The web version is a voice-first business assistant:
+
+- **Tasks and reminders** in plain speech, with priorities and due dates.
+- **Gmail, Google Calendar and Google Drive** through your Claude connectors. Anything that changes your accounts waits for your approval, and Jarvis never sends email.
+- **Daily briefing**, plus Business, Focus, Content and Research modes.
+- **Your own workflows**, with approval checkpoints and run history.
+- **Content studio** for Instagram, YouTube, LinkedIn, Facebook, WhatsApp and Telegram drafts.
+- **Research briefs**.
+- **App launcher**.
+- **Investing desk** from the first version.
+
+Your data is kept privately in your Claude account. It cannot read live exchange prices or open programs on your PC; the desktop version below does that. Source: `web/`. Design, roadmap and what each social platform still needs: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Start it on your computer
 
