@@ -18,6 +18,8 @@ DEFAULTS = {
     "share_portfolio_with_ai": True,
     "email": {"smtp_host": "smtp.gmail.com", "smtp_port": 587, "address": ""},
     "contacts": {},
+    "prefer_desktop_apps": True,
+    "business_apps": ["gmail", "whatsapp", "google calendar"],
     "connections": {},
 }
 

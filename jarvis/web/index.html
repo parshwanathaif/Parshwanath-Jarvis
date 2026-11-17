@@ -214,7 +214,11 @@ $('orb').onclick = () => { if (speaking) { speechSynthesis.cancel(); return; }
   if ($('wake').checked) { armedUntil = Date.now() + 9000; setState('listening', 'Listening'); if (!listening) startRecognition(); }
   else if (listening) pauseRecognition(); else startRecognition(); };
 $('form').onsubmit = e => { e.preventDefault(); const t = $('text').value.trim(); $('text').value = ''; send(t); };
-$('wake').onchange = () => { pauseRecognition(); listening = false; if ($('wake').checked) startRecognition(); idle(); };
+$('wake').onchange = () => { try { localStorage.setItem('jarvis-wake', $('wake').checked ? '1' : '0'); } catch (_) {}
+  pauseRecognition(); listening = false; if ($('wake').checked) startRecognition(); idle(); };
+// Hands-free by default: keep listening for the wake word unless you switched it off last time.
+try { $('wake').checked = localStorage.getItem('jarvis-wake') !== '0'; } catch (_) { $('wake').checked = true; }
+if (SR && $('wake').checked) setTimeout(startRecognition, 800);
 document.addEventListener('keydown', e => { if (e.code === 'Space' && document.activeElement !== $('text')) { e.preventDefault(); $('orb').click(); } });
 for (const c of ['Market update', 'How is my portfolio', 'Show watchlist', 'Business news', 'Help'])
   { const b = el('button', c, 'chip'); b.type = 'button'; b.onclick = () => send(c); $('chips').append(b); }

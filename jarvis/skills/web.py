@@ -2,6 +2,7 @@
 import os
 import re
 import smtplib
+import sys
 import urllib.parse
 import xml.etree.ElementTree as ET
 from email.message import EmailMessage
@@ -22,7 +23,19 @@ SITES = {
     "nse": "https://www.nseindia.com", "bse": "https://www.bseindia.com", "tickertape": "https://www.tickertape.in",
     "economic times": "https://economictimes.indiatimes.com/markets", "sebi": "https://www.sebi.gov.in",
     "trendlyne": "https://trendlyne.com", "chartink": "https://chartink.com", "claude": "https://claude.ai",
+    "instagram": "https://www.instagram.com", "insta": "https://www.instagram.com", "facebook": "https://www.facebook.com",
+    "fb": "https://www.facebook.com", "telegram": "https://web.telegram.org", "x": "https://x.com",
+    "google calendar": "https://calendar.google.com", "my calendar": "https://calendar.google.com",
+    "google drive": "https://drive.google.com", "my drive": "https://drive.google.com", "google docs": "https://docs.google.com/document/u/0/",
+    "docs": "https://docs.google.com/document/u/0/", "google sheets": "https://docs.google.com/spreadsheets/u/0/",
+    "sheets": "https://docs.google.com/spreadsheets/u/0/", "google meet": "https://meet.google.com", "meet": "https://meet.google.com",
+    "youtube studio": "https://studio.youtube.com", "google maps": "https://maps.google.com", "inbox": "https://mail.google.com",
+    "email": "https://mail.google.com", "g mail": "https://mail.google.com", "whats app": "https://web.whatsapp.com",
+    "whatsapp web": "https://web.whatsapp.com", "linked in": "https://www.linkedin.com", "you tube": "https://www.youtube.com",
 }
+# Installed Windows apps that register a link type. Tried first; the website is the fallback.
+DESKTOP_APPS = {"whatsapp": "whatsapp:", "whats app": "whatsapp:", "telegram": "tg:"}
+BUSINESS_APPS = ["gmail", "whatsapp", "google calendar"]
 WEATHER_CODES = {0: "clear sky", 1: "mainly clear", 2: "partly cloudy", 3: "overcast", 45: "fog", 48: "fog",
                  51: "light drizzle", 53: "drizzle", 55: "heavy drizzle", 61: "light rain", 63: "rain",
                  65: "heavy rain", 71: "light snow", 73: "snow", 75: "heavy snow", 80: "rain showers",
@@ -58,15 +71,35 @@ def connection(j, m):
 
 
 # -- browser ------------------------------------------------------------------
-def open_site(j, m):
-    name = re.sub(r"^(the|my)\s+|\s+(website|site|app|dot com|\.com)$", "", m.group("name").lower()).strip()
+def _site_name(raw):
+    return re.sub(r"^(the|my)\s+|\s+(website|site|app|application|dot com|\.com|web|please)$", "", raw.lower().strip(" .,!?")).strip()
+
+
+def open_one(j, name):
+    """Open one app or site immediately. Returns the name actually opened."""
+    if j.cfg.get("prefer_desktop_apps", True) and name in DESKTOP_APPS and sys.platform == "win32":
+        try:
+            j.open_app(DESKTOP_APPS[name])
+            return name + " app"
+        except OSError:
+            pass  # app not installed: use the website
     if name in SITES:
         j.open_url(SITES[name])
     elif re.fullmatch(r"[\w\-]+(\.[\w\-]+)+(/\S*)?", name):
         j.open_url("https://" + name)
     else:
-        j.open_url("https://www." + re.sub(r"[^a-z0-9\-]", "", name) + ".com")
-    return Reply(f"Opening {name}.")
+        j.open_url("https://www.google.com/search?q=" + q(name))   # unknown name: search for it rather than guess an address
+    return name
+
+
+def open_site(j, m):
+    raw = m.group("name")
+    if re.search(r"\b(business|work|my) (apps|applications)\b|\ball my apps\b", raw, re.I):
+        names = [n.lower() for n in j.cfg.get("business_apps") or BUSINESS_APPS]
+    else:
+        names = [_site_name(x) for x in re.split(r",|\band\b|&", raw) if _site_name(x)]
+    opened = [open_one(j, n) for n in names[:6]]
+    return Reply("Opening " + (", ".join(opened[:-1]) + " and " + opened[-1] if len(opened) > 1 else opened[0]) + ".")
 
 
 def youtube(j, m):

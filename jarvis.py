@@ -6,6 +6,8 @@
     python jarvis.py --voice    microphone + speaker in the terminal (extra packages)
 """
 import argparse
+import os
+import subprocess
 import sys
 import threading
 import webbrowser
@@ -21,6 +23,20 @@ def print_reply(reply):
     if panel:
         for row in panel["rows"]:
             print("   " + "  |  ".join(str(c["text"] if isinstance(c, dict) else c) for c in row))
+
+
+def open_hud(url):
+    """Open the HUD in its own Chrome/Edge app window on Windows, so the sites Jarvis opens
+    go to your normal browser window and Jarvis keeps listening. Falls back to a normal tab."""
+    if sys.platform == "win32":
+        roots = [os.environ.get(k, "") for k in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA")]
+        for rel in (r"Google\Chrome\Application\chrome.exe", r"Microsoft\Edge\Application\msedge.exe"):
+            for root in roots:
+                exe = os.path.join(root, rel)
+                if root and os.path.exists(exe):
+                    subprocess.Popen([exe, f"--app={url}", "--window-size=1200,860"])
+                    return
+    webbrowser.open(url)
 
 
 def main():
@@ -67,7 +83,7 @@ def main():
     url = f"http://127.0.0.1:{args.port}/"
     print(f"Jarvis is online at {url}\nUse Chrome or Edge for voice. Press Ctrl+C here to shut down.")
     if not args.no_browser:
-        threading.Timer(0.6, webbrowser.open, [url]).start()
+        threading.Timer(0.6, open_hud, [url]).start()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

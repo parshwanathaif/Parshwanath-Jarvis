@@ -43,7 +43,7 @@
       return R("A web page can't open folders or programs on your computer. The Jarvis desktop app can: add the folder to its config.json and say “open my project folder” there. Your Google Drive is linked below.", { links: [{ label: "Open Google Drive", href: "https://drive.google.com" }] });
     const app = J.findApp(name);
     if (app) { J.ctx.lastApp = app.key; J.log("Launcher", "Open " + app.name);
-      return R(`${app.name} is ready. Tap the button to open it.`, { links: [J.launchCard(app)] }); }
+      return R(`${app.name} is ready. Tap the button to open it.`, { links: [J.launchCard(app)], open: { url: app.url, name: app.name } }); }
     if (/^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(name)) return R(`Here is ${name}.`, { links: [{ label: "Open " + name, href: "https://" + name }] });
     return null;   // let the AI decide (e.g. "open the marketing plan" → Drive search)
   });

@@ -26,6 +26,9 @@ Your data is kept privately in your Claude account. It cannot read live exchange
 
 ## Start it on your computer
 
+**Hands-free app opening:** in the desktop version, say "Jarvis, open WhatsApp" (or Gmail, Instagram, YouTube, LinkedIn, Google Calendar, Facebook, Telegram, Drive, Meet…) and it opens straight away, with no click. You can name several at once ("open Gmail and LinkedIn"), or say "open my business apps" for the list under `business_apps` in `config.json`. On Windows, WhatsApp and Telegram open in their installed apps when present, otherwise on the web. The Jarvis screen opens in its own window and keeps listening for "Jarvis" while you work.
+
+
 You need **Python 3.9 or newer** and **Chrome or Edge**. Nothing else has to be installed.
 
 ```bash

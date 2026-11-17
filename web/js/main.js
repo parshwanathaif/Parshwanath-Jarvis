@@ -46,6 +46,12 @@
     busy = false;
     if (reply.remember) J.ai.session.push(reply.remember);
     if (reply.ask) J.ctx.pending = reply.ask;
+    if (reply.open) {                       // try to open it straight away; browsers allow this only soon after a click or key press
+      let w = null; try { w = window.open(reply.open.url, "_blank"); } catch (_) {}
+      if (w) { try { w.opener = null; } catch (_) {} reply.speech = `Opening ${reply.open.name}.`; J.log("Opened", reply.open.name); }
+      else { reply.speech = `${reply.open.name} is ready. The browser blocked opening it automatically, so tap the button.`;
+        J.voice.diag("Auto-open blocked by the browser for " + reply.open.name, "bad"); }
+    }
     const goto = reply.view && reply.view !== J.view ? reply.view : null;
     if (reply.speech) addMsg(reply.speech, "jarvis", { links: reply.links, goto: goto && goto !== "help" ? goto : null });
     else if (reply.links && reply.links.length) addMsg("", "jarvis", { links: reply.links });

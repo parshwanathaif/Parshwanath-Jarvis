@@ -152,6 +152,35 @@ class Commands(unittest.TestCase):
             "https://www.screener.in/company/TCS/", "https://www.google.com/maps/search/nariman+point",
             "https://moneycontrol.com"])
 
+    def test_voice_open_apps(self):
+        self.say("Jarvis, open Instagram")
+        self.say("open WhatsApp")
+        self.say("open google calendar")
+        r = self.say("open Gmail and LinkedIn")
+        self.assertEqual(r["speech"], "Opening gmail and linkedin.")
+        self.say("open my business apps")
+        self.say("open some unknown thing")
+        self.assertEqual(self.j.opened, [
+            "https://www.instagram.com", "https://web.whatsapp.com", "https://calendar.google.com",
+            "https://mail.google.com", "https://www.linkedin.com",
+            "https://mail.google.com", "https://web.whatsapp.com", "https://calendar.google.com",
+            "https://www.google.com/search?q=some+unknown+thing"])
+
+    def test_whatsapp_desktop_app_first_on_windows(self):
+        from jarvis.skills import web
+        real = web.sys.platform
+        web.sys.platform = "win32"
+        try:
+            self.say("open WhatsApp")
+            self.assertEqual(self.j.opened[-1], "whatsapp:")
+            def missing(target):
+                raise OSError("no app registered")
+            self.j.open_app = missing                      # app not installed -> website
+            self.say("open WhatsApp")
+            self.assertEqual(self.j.opened[-1], "https://web.whatsapp.com")
+        finally:
+            web.sys.platform = real
+
     def test_memory(self):
         self.say("remember that the AGM is on Friday")
         self.assertIn("the AGM is on Friday", self.say("what do you remember")["speech"])
